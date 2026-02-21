@@ -1,17 +1,32 @@
-import { useState } from 'react';
-import { Save, MonitorPlay } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Save, MonitorPlay, Key } from 'lucide-react';
 import { useToast } from '../App';
 
 export default function Settings() {
   const [concurrentStreams, setConcurrentStreams] = useState(4);
   const [autoDetect, setAutoDetect] = useState(true);
+  const [twitchClientId, setTwitchClientId] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const { showToast } = useToast();
+
+  useEffect(() => {
+    fetch('/api/settings')
+      .then(r => r.json())
+      .then(data => {
+        if (data.twitchClientId) {
+          setTwitchClientId(data.twitchClientId);
+        }
+      });
+  }, []);
 
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await fetch('/api/settings', { method: 'POST' });
+      await fetch('/api/settings', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ twitchClientId })
+      });
       showToast('Settings successfully saved to local database.');
     } catch (error) {
       showToast('Failed to save settings.', 'error');
@@ -50,6 +65,30 @@ export default function Settings() {
       </header>
 
       <div className="bg-[#18181b] border border-[#27272a] rounded-xl overflow-hidden">
+        
+        {/* Twitch API Configuration */}
+        <div className="p-6 border-b border-[#27272a]">
+          <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+            <Key size={18} className="text-[#9146FF]" />
+            Twitch API Configuration
+          </h2>
+          <p className="text-sm text-[#a1a1aa] mb-4">
+            Required for adding accounts via Device Authentication. Your Client ID is stored locally in the SQLite database.
+          </p>
+          <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-4 items-center">
+              <label className="text-sm font-medium text-[#a1a1aa]">Twitch Client ID</label>
+              <input 
+                type="text" 
+                value={twitchClientId}
+                onChange={(e) => setTwitchClientId(e.target.value)}
+                placeholder="Enter your Client ID"
+                className="col-span-2 bg-[#09090b] border border-[#27272a] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#9146FF] text-[#fafafa] font-mono"
+              />
+            </div>
+          </div>
+        </div>
+
         <div className="p-6 border-b border-[#27272a]">
           <h2 className="text-lg font-semibold mb-4">General Configuration</h2>
           <div className="space-y-4">

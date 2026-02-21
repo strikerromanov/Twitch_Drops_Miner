@@ -19,6 +19,13 @@ async function startServer() {
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
   `);
 
+  try {
+    db.exec('ALTER TABLE accounts ADD COLUMN accessToken TEXT');
+    db.exec('ALTER TABLE accounts ADD COLUMN refreshToken TEXT');
+  } catch (e) {
+    // Columns likely already exist
+  }
+
   // Seed initial data if empty
   const accCount = db.prepare('SELECT COUNT(*) as c FROM accounts').get() as { c: number };
   if (accCount.c === 0) {
@@ -49,11 +56,90 @@ async function startServer() {
     res.json(db.prepare('SELECT * FROM accounts').all());
   });
 
-  app.post("/api/accounts/auth", (req, res) => {
-    // Simulate OAuth device flow completion
-    const insert = db.prepare('INSERT INTO accounts (username, status, currentTarget, points) VALUES (?, ?, ?, ?)');
-    const info = insert.run(`TwitchUser_${Math.floor(Math.random()*10000)}`, 'idle', null, 0);
-    res.json({ success: true, id: info.lastInsertRowid });
+  app.post("/api/auth/device", async (req, res) => {
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'twitchClientId'").get() as {value: string} | undefined;
+    const clientId = row?.value;
+    
+    if (!clientId) {
+      return res.status(400).json({ error: "TWITCH_CLIENT_ID_MISSING" });
+    }
+
+    try {
+      const response = await fetch('https://id.twitch.tv/oauth2/device', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: clientId,
+          scopes: 'user:read:email chat:read chat:edit' // Basic scopes for farming
+        })
+      });
+      
+      const data = await response.json();
+      if (!response.ok) {
+        return res.status(400).json({ error: data.message || "Failed to get device code from Twitch." });
+      }
+      
+      res.json(data);
+    } catch (error) {
+      console.error("Device Auth Error:", error);
+      res.status(500).json({ error: "Internal server error while contacting Twitch." });
+    }
+  });
+
+  app.post("/api/auth/poll", async (req, res) => {
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'twitchClientId'").get() as {value: string} | undefined;
+    const clientId = row?.value;
+    const { device_code } = req.body;
+    
+    if (!clientId || !device_code) {
+      return res.status(400).json({ error: "Missing client ID or device code." });
+    }
+
+    try {
+      const response = await fetch('https://id.twitch.tv/oauth2/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: clientId,
+          device_code: device_code,
+          grant_type: 'urn:ietf:params:oauth:grant-type:device_code'
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (response.status === 400 && data.message === 'authorization_pending') {
+        return res.json({ status: 'pending' });
+      }
+      
+      if (data.access_token) {
+        // Fetch user profile to get username
+        const userRes = await fetch('https://api.twitch.tv/helix/users', {
+          headers: {
+            'Authorization': `Bearer ${data.access_token}`,
+            'Client-Id': clientId
+          }
+        });
+        
+        const userData = await userRes.json();
+        if (!userData.data || userData.data.length === 0) {
+          return res.status(400).json({ error: "Failed to fetch Twitch user profile." });
+        }
+        
+        const username = userData.data[0].login;
+
+        // Save to DB
+        const insert = db.prepare('INSERT INTO accounts (username, status, currentTarget, points, accessToken, refreshToken) VALUES (?, ?, ?, ?, ?, ?)');
+        insert.run(username, 'idle', null, 0, data.access_token, data.refresh_token);
+
+        return res.json({ status: 'success', username });
+      }
+      
+      res.status(400).json({ error: data.message || "Authentication failed." });
+    } catch (error) {
+      console.error("Token Poll Error:", error);
+      res.status(500).json({ error: "Internal server error while polling Twitch." });
+    }
   });
 
   app.delete("/api/accounts/:id", (req, res) => {
@@ -65,8 +151,20 @@ async function startServer() {
     res.json(db.prepare('SELECT * FROM bet_history').all());
   });
 
+  app.get("/api/settings", (req, res) => {
+    const rows = db.prepare('SELECT * FROM settings').all() as {key: string, value: string}[];
+    const settings = rows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {});
+    res.json(settings);
+  });
+
   app.post("/api/settings", (req, res) => {
-    // Mock save settings to DB
+    const { twitchClientId } = req.body;
+    const stmt = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value');
+    
+    if (twitchClientId !== undefined) {
+      stmt.run('twitchClientId', twitchClientId);
+    }
+    
     res.json({ success: true });
   });
 
