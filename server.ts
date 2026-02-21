@@ -1,5 +1,6 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
+import Database from "better-sqlite3";
 
 async function startServer() {
   const app = express();
@@ -7,22 +8,71 @@ async function startServer() {
 
   app.use(express.json());
 
+  // Initialize Local SQLite Database for W/L tracking and state
+  // Using WAL mode for high-concurrency writes from headless browser workers
+  const db = new Database('farm.db');
+  db.pragma('journal_mode = WAL');
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS accounts (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, status TEXT, currentTarget TEXT, points INTEGER);
+    CREATE TABLE IF NOT EXISTS bet_history (id INTEGER PRIMARY KEY AUTOINCREMENT, streamer TEXT, winRate REAL, totalBets INTEGER, riskLevel TEXT, recommendedStrategy TEXT);
+    CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
+  `);
+
+  // Seed initial data if empty
+  const accCount = db.prepare('SELECT COUNT(*) as c FROM accounts').get() as { c: number };
+  if (accCount.c === 0) {
+    const insertAcc = db.prepare('INSERT INTO accounts (username, status, currentTarget, points) VALUES (?, ?, ?, ?)');
+    insertAcc.run('GamerOne', 'farming', 'shroud', 450200);
+    insertAcc.run('AltAccount99', 'farming', 'tarik', 12050);
+
+    const insertBet = db.prepare('INSERT INTO bet_history (streamer, winRate, totalBets, riskLevel, recommendedStrategy) VALUES (?, ?, ?, ?, ?)');
+    insertBet.run('shroud', 72.5, 145, 'Low', 'Kelly Criterion');
+    insertBet.run('tarik', 45.2, 89, 'High', 'Martingale');
+    insertBet.run('zackrawrr', 88.1, 210, 'Very Low', 'Kelly Criterion');
+    insertBet.run('kyedae', 55.4, 42, 'Medium', 'Fibonacci');
+  }
+
   // API Routes
   app.get("/api/stats", (req, res) => {
-    res.json({
-      totalPoints: 1254300,
-      dropsClaimed: 142,
-      activeAccounts: 3,
-      uptime: "14d 5h 23m",
+    const accounts = db.prepare('SELECT * FROM accounts').all() as any[];
+    const totalPoints = accounts.reduce((sum, acc) => sum + acc.points, 0);
+    res.json({ 
+      totalPoints, 
+      dropsClaimed: 142, 
+      activeAccounts: accounts.filter(a => a.status === 'farming').length, 
+      uptime: "14d 5h 23m" 
     });
   });
 
   app.get("/api/accounts", (req, res) => {
-    res.json([
-      { id: 1, username: "GamerOne", status: "farming", currentTarget: "shroud", points: 450200 },
-      { id: 2, username: "AltAccount99", status: "farming", currentTarget: "tarik", points: 12050 },
-      { id: 3, username: "DropsFarmerX", status: "idle", currentTarget: null, points: 890040 },
-    ]);
+    res.json(db.prepare('SELECT * FROM accounts').all());
+  });
+
+  app.post("/api/accounts/auth", (req, res) => {
+    // Simulate OAuth device flow completion
+    const insert = db.prepare('INSERT INTO accounts (username, status, currentTarget, points) VALUES (?, ?, ?, ?)');
+    const info = insert.run(`TwitchUser_${Math.floor(Math.random()*10000)}`, 'idle', null, 0);
+    res.json({ success: true, id: info.lastInsertRowid });
+  });
+
+  app.delete("/api/accounts/:id", (req, res) => {
+    db.prepare('DELETE FROM accounts WHERE id = ?').run(req.params.id);
+    res.json({ success: true });
+  });
+
+  app.get("/api/streamer-analysis", (req, res) => {
+    res.json(db.prepare('SELECT * FROM bet_history').all());
+  });
+
+  app.post("/api/settings", (req, res) => {
+    // Mock save settings to DB
+    res.json({ success: true });
+  });
+
+  app.post("/api/factory-reset", (req, res) => {
+    db.exec('DELETE FROM accounts; DELETE FROM bet_history; DELETE FROM settings;');
+    res.json({ success: true });
   });
 
   app.get("/api/campaigns", (req, res) => {
@@ -41,15 +91,6 @@ async function startServer() {
       { id: 4, name: "Path of Exile 2", activeCampaigns: 0, whitelisted: true, lastDrop: "1 month ago" },
       { id: 5, name: "Overwatch 2", activeCampaigns: 1, whitelisted: true, lastDrop: "Currently Active" },
       { id: 6, name: "Warframe", activeCampaigns: 0, whitelisted: false, lastDrop: "2 weeks ago" },
-    ]);
-  });
-
-  app.get("/api/streamer-analysis", (req, res) => {
-    res.json([
-      { id: 1, streamer: "shroud", winRate: 72.5, totalBets: 145, riskLevel: "Low", recommendedStrategy: "Follow the Crowd" },
-      { id: 2, streamer: "tarik", winRate: 45.2, totalBets: 89, riskLevel: "High", recommendedStrategy: "Underdog" },
-      { id: 3, streamer: "zackrawrr", winRate: 88.1, totalBets: 210, riskLevel: "Very Low", recommendedStrategy: "Smart Percentage" },
-      { id: 4, streamer: "kyedae", winRate: 55.4, totalBets: 42, riskLevel: "Medium", recommendedStrategy: "Smart Percentage" },
     ]);
   });
 

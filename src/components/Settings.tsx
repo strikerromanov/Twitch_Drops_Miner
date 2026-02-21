@@ -1,9 +1,36 @@
 import { useState } from 'react';
 import { Save, MonitorPlay } from 'lucide-react';
+import { useToast } from '../App';
 
 export default function Settings() {
   const [concurrentStreams, setConcurrentStreams] = useState(4);
   const [autoDetect, setAutoDetect] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const { showToast } = useToast();
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      await fetch('/api/settings', { method: 'POST' });
+      showToast('Settings successfully saved to local database.');
+    } catch (error) {
+      showToast('Failed to save settings.', 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleFactoryReset = async () => {
+    if (confirm('WARNING: This will delete all accounts, bet history, and settings from the local SQLite database. Are you absolutely sure?')) {
+      try {
+        await fetch('/api/factory-reset', { method: 'POST' });
+        showToast('Database reset successfully. Reloading...', 'success');
+        setTimeout(() => window.location.reload(), 1500);
+      } catch (error) {
+        showToast('Failed to reset database.', 'error');
+      }
+    }
+  };
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -12,9 +39,13 @@ export default function Settings() {
           <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
           <p className="text-[#a1a1aa] mt-1">System configuration and preferences.</p>
         </div>
-        <button className="flex items-center gap-2 bg-[#fafafa] hover:bg-[#e4e4e7] text-[#09090b] px-4 py-2 rounded-lg font-medium transition-colors">
+        <button 
+          onClick={handleSave}
+          disabled={isSaving}
+          className="flex items-center gap-2 bg-[#fafafa] hover:bg-[#e4e4e7] disabled:opacity-50 text-[#09090b] px-4 py-2 rounded-lg font-medium transition-colors"
+        >
           <Save size={18} />
-          Save Changes
+          {isSaving ? 'Saving...' : 'Save Changes'}
         </button>
       </header>
 
@@ -35,7 +66,7 @@ export default function Settings() {
               <label className="text-sm font-medium text-[#a1a1aa]">Headless Mode</label>
               <div className="col-span-2 flex items-center">
                 <input type="checkbox" className="w-4 h-4 rounded border-[#27272a] text-[#9146FF] focus:ring-[#9146FF] bg-[#09090b]" defaultChecked />
-                <span className="ml-2 text-sm text-[#fafafa]">Run browser in background</span>
+                <span className="ml-2 text-sm text-[#fafafa]">Run browser in background (No GUI)</span>
               </div>
             </div>
           </div>
@@ -105,7 +136,10 @@ export default function Settings() {
               <h3 className="font-medium text-red-400">Reset All Data</h3>
               <p className="text-sm text-[#a1a1aa] mt-1">Clear all accounts, logs, and settings. This cannot be undone.</p>
             </div>
-            <button className="px-4 py-2 bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 rounded-lg font-medium transition-colors">
+            <button 
+              onClick={handleFactoryReset}
+              className="px-4 py-2 bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 rounded-lg font-medium transition-colors"
+            >
               Factory Reset
             </button>
           </div>

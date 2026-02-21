@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { TrendingUp, AlertTriangle, History, BrainCircuit } from 'lucide-react';
+import { TrendingUp, AlertTriangle, History, BrainCircuit, Database, Sparkles } from 'lucide-react';
 
 export default function Betting() {
   const [analysis, setAnalysis] = useState<any[]>([]);
@@ -18,7 +18,13 @@ export default function Betting() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           <div className="bg-[#18181b] border border-[#27272a] rounded-xl p-6">
-            <h2 className="text-lg font-semibold mb-4">Global Strategy</h2>
+            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <Database size={18} className="text-[#a1a1aa]" />
+              Local DB Strategies
+            </h2>
+            <p className="text-sm text-[#a1a1aa] mb-4">
+              These strategies utilize your local SQLite database to track historical Win/Loss ratios per streamer and bet accordingly.
+            </p>
             
             <div className="space-y-4">
               <label className="flex items-center justify-between p-4 border border-[#9146FF]/50 bg-[#9146FF]/5 rounded-lg cursor-pointer transition-colors relative overflow-hidden">
@@ -26,17 +32,25 @@ export default function Betting() {
                 <div>
                   <div className="font-medium flex items-center gap-2">
                     <BrainCircuit size={16} className="text-[#9146FF]" />
-                    META Strategy (AI Analyzed)
+                    Kelly Criterion (Optimal)
                   </div>
-                  <div className="text-sm text-[#a1a1aa] mt-1">Dynamically adapts strategy per streamer based on historical W/L ratios</div>
+                  <div className="text-sm text-[#a1a1aa] mt-1">Calculates optimal bet size based on historical W/L ratio stored in local DB.</div>
                 </div>
                 <input type="radio" name="strategy" className="w-4 h-4 text-[#9146FF] bg-[#27272a] border-[#27272a] focus:ring-[#9146FF]" defaultChecked />
               </label>
 
               <label className="flex items-center justify-between p-4 border border-[#27272a] rounded-lg cursor-pointer hover:bg-[#27272a]/30 transition-colors">
                 <div>
-                  <div className="font-medium">Smart Percentage</div>
-                  <div className="text-sm text-[#a1a1aa] mt-1">Bet a dynamic percentage based on current balance</div>
+                  <div className="font-medium">Martingale System</div>
+                  <div className="text-sm text-[#a1a1aa] mt-1">Doubles the bet amount after every loss to recover previous losses.</div>
+                </div>
+                <input type="radio" name="strategy" className="w-4 h-4 text-[#9146FF] bg-[#27272a] border-[#27272a] focus:ring-[#9146FF]" />
+              </label>
+
+              <label className="flex items-center justify-between p-4 border border-[#27272a] rounded-lg cursor-pointer hover:bg-[#27272a]/30 transition-colors">
+                <div>
+                  <div className="font-medium">Fibonacci Sequence</div>
+                  <div className="text-sm text-[#a1a1aa] mt-1">Increases bet following the Fibonacci sequence on a loss. Safer than Martingale.</div>
                 </div>
                 <input type="radio" name="strategy" className="w-4 h-4 text-[#9146FF] bg-[#27272a] border-[#27272a] focus:ring-[#9146FF]" />
               </label>
@@ -44,10 +58,26 @@ export default function Betting() {
               <label className="flex items-center justify-between p-4 border border-[#27272a] rounded-lg cursor-pointer hover:bg-[#27272a]/30 transition-colors">
                 <div>
                   <div className="font-medium">Follow the Crowd</div>
-                  <div className="text-sm text-[#a1a1aa] mt-1">Bet on the option with the highest total points</div>
+                  <div className="text-sm text-[#a1a1aa] mt-1">Bet on the option with the highest total points (No DB required).</div>
                 </div>
                 <input type="radio" name="strategy" className="w-4 h-4 text-[#9146FF] bg-[#27272a] border-[#27272a] focus:ring-[#9146FF]" />
               </label>
+            </div>
+
+            <div className="mt-8 pt-6 border-t border-[#27272a]">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-medium flex items-center gap-2">
+                    <Sparkles size={16} className="text-[#f59e0b]" />
+                    AI Prediction Module <span className="text-xs px-2 py-0.5 rounded-full bg-[#27272a] text-[#a1a1aa] ml-2">Optional</span>
+                  </h3>
+                  <p className="text-sm text-[#a1a1aa] mt-1">Uses external LLMs to analyze chat sentiment for live predictions.</p>
+                </div>
+                <div className="flex items-center">
+                  <input type="checkbox" className="w-4 h-4 rounded border-[#27272a] text-[#9146FF] focus:ring-[#9146FF] bg-[#09090b]" />
+                  <span className="ml-2 text-sm text-[#fafafa]">Enable AI</span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -56,7 +86,7 @@ export default function Betting() {
             <div className="p-4 border-b border-[#27272a] bg-[#18181b]/50 flex justify-between items-center">
               <h2 className="font-semibold flex items-center gap-2">
                 <History size={18} className="text-[#a1a1aa]" />
-                Streamer Analysis & History
+                Local DB W/L Tracking
               </h2>
             </div>
             <div className="grid grid-cols-12 gap-4 p-4 border-b border-[#27272a] bg-[#27272a]/20">
@@ -64,7 +94,7 @@ export default function Betting() {
               <div className="col-span-2 col-header text-right">Win Rate</div>
               <div className="col-span-2 col-header text-right">Total Bets</div>
               <div className="col-span-2 col-header">Risk Level</div>
-              <div className="col-span-3 col-header">META Recommendation</div>
+              <div className="col-span-3 col-header">Recommended</div>
             </div>
             <div className="divide-y divide-[#27272a]">
               {analysis.map(item => (
