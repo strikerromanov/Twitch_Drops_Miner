@@ -83,6 +83,11 @@ export default function Accounts() {
     if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
   };
 
+  const handleToggle = async (id: number) => {
+    await fetch(`/api/accounts/${id}/toggle`, { method: 'POST' });
+    fetchAccounts();
+  };
+
   const handleDelete = async (id: number) => {
     if (confirm('Are you sure you want to remove this account?')) {
       await fetch(`/api/accounts/${id}`, { method: 'DELETE' });
@@ -154,7 +159,11 @@ export default function Accounts() {
                 {acc.points.toLocaleString()}
               </div>
               <div className="col-span-2 flex items-center justify-end gap-2">
-                <button className="p-1.5 text-[#a1a1aa] hover:text-[#10b981] hover:bg-[#27272a] rounded transition-colors" title="Start/Stop">
+                <button 
+                  onClick={() => handleToggle(acc.id)}
+                  className="p-1.5 text-[#a1a1aa] hover:text-[#10b981] hover:bg-[#27272a] rounded transition-colors" 
+                  title="Start/Stop"
+                >
                   {acc.status === 'farming' ? <Square size={16} /> : <Play size={16} />}
                 </button>
                 <button className="p-1.5 text-[#a1a1aa] hover:text-white hover:bg-[#27272a] rounded transition-colors" title="Force Refresh">

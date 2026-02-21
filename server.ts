@@ -1,6 +1,8 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import Database from "better-sqlite3";
+import fs from "fs";
+import path from "path";
 
 async function startServer() {
   const app = express();
@@ -8,9 +10,15 @@ async function startServer() {
 
   app.use(express.json());
 
+  // Ensure data directory exists for Docker volume mounting
+  const dataDir = path.join(process.cwd(), 'data');
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+  }
+
   // Initialize Local SQLite Database for W/L tracking and state
   // Using WAL mode for high-concurrency writes from headless browser workers
-  const db = new Database('farm.db');
+  const db = new Database(path.join(dataDir, 'farm.db'));
   db.pragma('journal_mode = WAL');
 
   db.exec(`
@@ -31,8 +39,8 @@ async function startServer() {
   const accCount = db.prepare('SELECT COUNT(*) as c FROM accounts').get() as { c: number };
   if (accCount.c === 0) {
     const insertAcc = db.prepare('INSERT INTO accounts (username, status, currentTarget, points) VALUES (?, ?, ?, ?)');
-    insertAcc.run('GamerOne', 'farming', 'shroud', 450200);
-    insertAcc.run('AltAccount99', 'farming', 'tarik', 12050);
+    insertAcc.run('GamerOne', 'idle', null, 450200);
+    insertAcc.run('AltAccount99', 'idle', null, 12050);
 
     const insertBet = db.prepare('INSERT INTO bet_history (streamer, winRate, totalBets, riskLevel, recommendedStrategy) VALUES (?, ?, ?, ?, ?)');
     insertBet.run('shroud', 72.5, 145, 'Low', 'Kelly Criterion');
@@ -41,11 +49,51 @@ async function startServer() {
     insertBet.run('kyedae', 55.4, 42, 'Medium', 'Fibonacci');
     
     const insertLog = db.prepare('INSERT INTO logs (time, type, message) VALUES (?, ?, ?)');
-    insertLog.run(new Date(Date.now() - 1000 * 60 * 5).toISOString(), "drop", "Claimed 'Spray' for Valorant on GamerOne");
-    insertLog.run(new Date(Date.now() - 1000 * 60 * 12).toISOString(), "points", "Claimed 50 points on shroud for GamerOne");
-    insertLog.run(new Date(Date.now() - 1000 * 60 * 25).toISOString(), "bet", "Won 500 points betting on 'Yes' in tarik's stream");
-    insertLog.run(new Date(Date.now() - 1000 * 60 * 40).toISOString(), "system", "AltAccount99 switched target to tarik (Priority: Drops)");
+    insertLog.run(new Date().toISOString(), "system", "Database initialized. Ready to start farming.");
   }
+
+  // --- BACKGROUND FARMING ENGINE (SIMULATION) ---
+  // In a real app, this would spawn Puppeteer/Playwright workers.
+  setInterval(() => {
+    const farmingAccounts = db.prepare("SELECT * FROM accounts WHERE status = 'farming'").all() as any[];
+    const campaigns = [
+      { game: "Valorant", streamer: "shroud" },
+      { game: "Overwatch 2", streamer: "emongg" },
+      { game: "Rust", streamer: "posty" },
+      { game: "Path of Exile", streamer: "zizaran" }
+    ];
+
+    farmingAccounts.forEach(acc => {
+      // 1. Assign target if none exists
+      if (!acc.currentTarget) {
+        const camp = campaigns[Math.floor(Math.random() * campaigns.length)];
+        db.prepare("UPDATE accounts SET currentTarget = ? WHERE id = ?").run(camp.streamer, acc.id);
+        db.prepare("INSERT INTO logs (time, type, message) VALUES (?, ?, ?)").run(
+          new Date().toISOString(), "system", `[${acc.username}] Joined ${camp.streamer}'s stream for ${camp.game} drops.`
+        );
+      } else {
+        // 2. Simulate farming activity (points, drops, bets)
+        const rand = Math.random();
+        
+        if (rand > 0.85) { // 15% chance to claim points
+          const points = Math.floor(Math.random() * 50) + 10;
+          db.prepare("UPDATE accounts SET points = points + ? WHERE id = ?").run(points, acc.id);
+          db.prepare("INSERT INTO logs (time, type, message) VALUES (?, ?, ?)").run(
+            new Date().toISOString(), "points", `[${acc.username}] Claimed ${points} channel points on ${acc.currentTarget}.`
+          );
+        } else if (rand > 0.75 && rand <= 0.85) { // 10% chance to progress drop
+          db.prepare("INSERT INTO logs (time, type, message) VALUES (?, ?, ?)").run(
+            new Date().toISOString(), "drop", `[${acc.username}] Drop progress updated on ${acc.currentTarget} (approx. 15m).`
+          );
+        } else if (rand > 0.70 && rand <= 0.75) { // 5% chance to place a bet
+          const betAmount = Math.floor(Math.random() * 500) + 100;
+          db.prepare("INSERT INTO logs (time, type, message) VALUES (?, ?, ?)").run(
+            new Date().toISOString(), "bet", `[${acc.username}] Placed ${betAmount} points bet on ${acc.currentTarget} using Kelly Criterion.`
+          );
+        }
+      }
+    });
+  }, 5000); // Run engine tick every 5 seconds
 
   // API Routes
   app.get("/api/stats", (req, res) => {
@@ -61,6 +109,23 @@ async function startServer() {
 
   app.get("/api/accounts", (req, res) => {
     res.json(db.prepare('SELECT * FROM accounts').all());
+  });
+
+  app.post("/api/accounts/:id/toggle", (req, res) => {
+    const acc = db.prepare('SELECT * FROM accounts WHERE id = ?').get(req.params.id) as any;
+    if (acc) {
+      const newStatus = acc.status === 'farming' ? 'idle' : 'farming';
+      const currentTarget = newStatus === 'idle' ? null : acc.currentTarget;
+      
+      db.prepare('UPDATE accounts SET status = ?, currentTarget = ? WHERE id = ?').run(newStatus, currentTarget, req.params.id);
+      
+      db.prepare('INSERT INTO logs (time, type, message) VALUES (?, ?, ?)').run(
+        new Date().toISOString(), 
+        "system", 
+        `[${acc.username}] Farming ${newStatus === 'farming' ? 'started' : 'stopped'}.`
+      );
+    }
+    res.json({ success: true });
   });
 
   app.post("/api/auth/device", async (req, res) => {
