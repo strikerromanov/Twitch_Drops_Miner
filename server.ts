@@ -94,13 +94,20 @@ async function startServer() {
     const dropLimit = Math.max(1, Math.floor(maxConcurrent * 0.2));
     const favLimit = maxConcurrent - dropLimit;
 
-    const activeCampaigns = db.prepare("SELECT * FROM campaigns WHERE status = 'active'").all() as any[];
-    const favoriteChannels = db.prepare("SELECT * FROM favorite_channels").all() as any[];
+    // Only fetch active campaigns for games that are whitelisted
+    const activeCampaigns = db.prepare(`
+      SELECT c.* FROM campaigns c 
+      JOIN games g ON c.game = g.name 
+      WHERE c.status = 'active' AND g.whitelisted = 1
+    `).all() as any[];
 
     farmingAccounts.forEach(acc => {
       const currentStreams = db.prepare("SELECT * FROM active_streams WHERE account_id = ?").all(acc.id) as any[];
       const currentDrops = currentStreams.filter(s => s.type === 'drop');
       const currentFavs = currentStreams.filter(s => s.type === 'favorite');
+
+      // Fetch live followed channels for this specific account
+      const followedChannels = db.prepare("SELECT * FROM followed_channels WHERE account_id = ? AND status = 'live'").all(acc.id) as any[];
 
       // 1. Assign Drop Streams
       if (currentDrops.length < dropLimit && activeCampaigns.length > 0) {
@@ -117,15 +124,15 @@ async function startServer() {
         }
       }
 
-      // 2. Assign Favorite Streams
-      if (currentFavs.length < favLimit && favoriteChannels.length > 0) {
+      // 2. Assign Followed Streams
+      if (currentFavs.length < favLimit && followedChannels.length > 0) {
         const needed = favLimit - currentFavs.length;
         for (let i = 0; i < needed; i++) {
-          const fav = favoriteChannels[Math.floor(Math.random() * favoriteChannels.length)];
+          const fav = followedChannels[Math.floor(Math.random() * followedChannels.length)];
           if (!currentStreams.find(s => s.streamer === fav.streamer) && !db.prepare("SELECT 1 FROM active_streams WHERE account_id = ? AND streamer = ?").get(acc.id, fav.streamer)) {
             db.prepare("INSERT INTO active_streams (account_id, streamer, type) VALUES (?, ?, ?)").run(acc.id, fav.streamer, 'favorite');
             db.prepare("INSERT INTO logs (time, type, message, account_id, streamer) VALUES (?, ?, ?, ?, ?)").run(
-              new Date().toISOString(), "system", `Joined favorite channel ${fav.streamer}.`, acc.id, fav.streamer
+              new Date().toISOString(), "system", `Joined followed channel ${fav.streamer}.`, acc.id, fav.streamer
             );
           }
         }
@@ -253,8 +260,17 @@ async function startServer() {
         if (!userData.data || userData.data.length === 0) return res.status(400).json({ error: "Failed to fetch profile." });
         
         const username = userData.data[0].login;
-        db.prepare('INSERT INTO accounts (username, status, points, accessToken, refreshToken) VALUES (?, ?, ?, ?, ?)').run(username, 'idle', 0, data.access_token, data.refresh_token);
-        db.prepare('INSERT INTO logs (time, type, message) VALUES (?, ?, ?)').run(new Date().toISOString(), "system", `Account ${username} linked.`);
+        const insertResult = db.prepare('INSERT INTO accounts (username, status, points, accessToken, refreshToken) VALUES (?, ?, ?, ?, ?)').run(username, 'idle', 0, data.access_token, data.refresh_token);
+        const newAccountId = insertResult.lastInsertRowid;
+        
+        // Mock followed channels for the new account
+        const insertFollowed = db.prepare('INSERT INTO followed_channels (account_id, streamer, status, points, bets) VALUES (?, ?, ?, ?, ?)');
+        insertFollowed.run(newAccountId, 'shroud', 'live', 0, 0);
+        insertFollowed.run(newAccountId, 'tarik', 'live', 0, 0);
+        insertFollowed.run(newAccountId, 'zackrawrr', 'offline', 0, 0);
+        insertFollowed.run(newAccountId, 'kyedae', 'live', 0, 0);
+        
+        db.prepare('INSERT INTO logs (time, type, message) VALUES (?, ?, ?)').run(new Date().toISOString(), "system", `Account ${username} linked and followed channels indexed.`);
         return res.json({ status: 'success', username });
       }
       res.status(400).json({ error: data.message || "Authentication failed." });
