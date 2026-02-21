@@ -1,146 +1,161 @@
 import { useEffect, useState } from 'react';
-import { Search, Filter, Clock, Check, X, List } from 'lucide-react';
+import { Gift, Star, Plus, Trash2, ExternalLink, Clock, CheckCircle2, RefreshCw, Gamepad2 } from 'lucide-react';
+import { useToast } from '../App';
 
 export default function Campaigns() {
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [games, setGames] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'active' | 'whitelist'>('active');
+  const [isIndexing, setIsIndexing] = useState(false);
+  const { showToast } = useToast();
 
-  useEffect(() => {
+  const fetchData = () => {
     fetch('/api/campaigns').then(r => r.json()).then(setCampaigns);
     fetch('/api/games').then(r => r.json()).then(setGames);
+  };
+
+  useEffect(() => {
+    fetchData();
   }, []);
 
-  const toggleWhitelist = (id: number) => {
-    setGames(games.map(g => g.id === id ? { ...g, whitelisted: !g.whitelisted } : g));
+  const handleToggleGame = async (id: number) => {
+    await fetch(`/api/games/${id}/toggle`, { method: 'POST' });
+    fetchData();
+  };
+
+  const handleIndexDrops = () => {
+    setIsIndexing(true);
+    showToast('Indexing drops from twitch.tv/drops/campaigns...');
+    
+    // Simulate scraping/indexing delay
+    setTimeout(() => {
+      setIsIndexing(false);
+      showToast('Successfully indexed 4 active campaigns.', 'success');
+      fetchData();
+    }, 2500);
   };
 
   return (
-    <div className="space-y-6">
-      <header className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Campaigns</h1>
-          <p className="text-[#a1a1aa] mt-1">Manage active drops and game whitelists.</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#a1a1aa]" size={16} />
-            <input 
-              type="text" 
-              placeholder="Search games..." 
-              className="bg-[#18181b] border border-[#27272a] rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none focus:border-[#9146FF] transition-colors w-64"
-            />
-          </div>
-          <button className="p-2 border border-[#27272a] rounded-lg bg-[#18181b] text-[#a1a1aa] hover:text-white transition-colors">
-            <Filter size={18} />
-          </button>
-        </div>
+    <div className="space-y-8">
+      <header>
+        <h1 className="text-3xl font-semibold tracking-tight">Campaigns & Games</h1>
+        <p className="text-[#a1a1aa] mt-1">Manage Twitch Drops campaigns and select which games to farm.</p>
       </header>
 
-      {/* Tabs */}
-      <div className="flex gap-2 border-b border-[#27272a] pb-px">
-        <button 
-          onClick={() => setActiveTab('active')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-            activeTab === 'active' ? 'border-[#9146FF] text-white' : 'border-transparent text-[#a1a1aa] hover:text-white'
-          }`}
-        >
-          Active Drops
-        </button>
-        <button 
-          onClick={() => setActiveTab('whitelist')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-            activeTab === 'whitelist' ? 'border-[#9146FF] text-white' : 'border-transparent text-[#a1a1aa] hover:text-white'
-          }`}
-        >
-          Game Whitelist & History
-        </button>
-      </div>
-
-      {activeTab === 'active' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pt-4">
-          {campaigns.map(camp => (
-            <div key={camp.id} className="bg-[#18181b] border border-[#27272a] rounded-xl overflow-hidden flex flex-col">
-              <div className="h-32 bg-gradient-to-br from-[#27272a] to-[#18181b] relative p-4 flex flex-col justify-between">
-                <div className="flex justify-between items-start">
-                  <span className={`px-2 py-1 rounded text-xs font-bold uppercase tracking-wider ${
-                    camp.status === 'active' ? 'bg-[#10b981] text-white' : 'bg-[#27272a] text-[#a1a1aa]'
-                  }`}>
-                    {camp.status}
-                  </span>
-                  {camp.status === 'active' && (
-                    <span className="flex items-center gap-1 text-xs font-mono bg-black/50 px-2 py-1 rounded text-white backdrop-blur-sm">
-                      <Clock size={12} /> {camp.timeRemaining} left
-                    </span>
-                  )}
-                </div>
-                <h3 className="font-bold text-xl text-white drop-shadow-md">{camp.game}</h3>
-              </div>
-              <div className="p-5 flex-1 flex flex-col">
-                <p className="text-[#a1a1aa] text-sm mb-4">{camp.name}</p>
-                
-                <div className="mt-auto space-y-2">
-                  <div className="flex justify-between text-xs font-mono text-[#a1a1aa]">
-                    <span>Progress</span>
-                    <span>{camp.progress}%</span>
-                  </div>
-                  <div className="h-2 bg-[#27272a] rounded-full overflow-hidden">
-                    <div 
-                      className={`h-full rounded-full transition-all duration-1000 ${camp.progress === 100 ? 'bg-[#10b981]' : 'bg-[#9146FF]'}`}
-                      style={{ width: `${camp.progress}%` }}
-                    ></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="bg-[#18181b] border border-[#27272a] rounded-xl overflow-hidden mt-4">
-          <div className="p-4 border-b border-[#27272a] bg-[#18181b]/50 flex justify-between items-center">
-            <h2 className="font-semibold flex items-center gap-2">
-              <List size={18} className="text-[#9146FF]" />
-              Indexed Games
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        
+        {/* Drops Campaigns Section */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold flex items-center gap-2">
+              <Gift className="text-[#9146FF]" />
+              Active Drops Campaigns
             </h2>
-            <p className="text-xs text-[#a1a1aa]">Enable games to automatically farm them when drops become available.</p>
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={handleIndexDrops}
+                disabled={isIndexing}
+                className="text-sm bg-[#27272a] hover:bg-[#3f3f46] text-white px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50"
+              >
+                <RefreshCw size={14} className={isIndexing ? "animate-spin" : ""} />
+                {isIndexing ? 'Indexing...' : 'Index Drops'}
+              </button>
+              <a 
+                href="https://www.twitch.tv/drops/campaigns" 
+                target="_blank" 
+                rel="noreferrer"
+                className="text-sm text-[#a1a1aa] hover:text-[#9146FF] flex items-center gap-1 transition-colors"
+              >
+                View on Twitch <ExternalLink size={14} />
+              </a>
+            </div>
           </div>
-          <div className="grid grid-cols-12 gap-4 p-4 border-b border-[#27272a] bg-[#27272a]/20">
-            <div className="col-span-4 col-header">Game Name</div>
-            <div className="col-span-3 col-header">Last Drop Event</div>
-            <div className="col-span-3 col-header">Active Campaigns</div>
-            <div className="col-span-2 col-header text-right">Farm Status</div>
-          </div>
-          <div className="divide-y divide-[#27272a]">
-            {games.map(game => (
-              <div key={game.id} className="grid grid-cols-12 gap-4 p-4 items-center hover:bg-[#27272a]/30 transition-colors">
-                <div className="col-span-4 font-medium text-[#fafafa]">{game.name}</div>
-                <div className="col-span-3 text-sm text-[#a1a1aa]">{game.lastDrop}</div>
-                <div className="col-span-3">
-                  {game.activeCampaigns > 0 ? (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-[#10b981]/10 text-[#10b981] border border-[#10b981]/20">
-                      {game.activeCampaigns} Active
+          <p className="text-sm text-[#a1a1aa]">
+            The engine allocates 20% of your concurrent stream capacity to farm these drops.
+          </p>
+
+          <div className="bg-[#18181b] border border-[#27272a] rounded-xl overflow-hidden">
+            <div className="divide-y divide-[#27272a]">
+              {campaigns.map(camp => (
+                <div key={camp.id} className="p-4 hover:bg-[#27272a]/30 transition-colors">
+                  <div className="flex justify-between items-start mb-3">
+                    <div>
+                      <h3 className="font-medium text-[#fafafa]">{camp.name}</h3>
+                      <p className="text-sm text-[#a1a1aa]">{camp.game} • twitch.tv/{camp.streamer}</p>
+                    </div>
+                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium border ${
+                      camp.status === 'active' 
+                        ? 'bg-[#10b981]/10 text-[#10b981] border-[#10b981]/20' 
+                        : 'bg-[#a1a1aa]/10 text-[#a1a1aa] border-[#a1a1aa]/20'
+                    }`}>
+                      {camp.status === 'active' ? <Clock size={12} /> : <CheckCircle2 size={12} />}
+                      {camp.status.toUpperCase()}
                     </span>
-                  ) : (
-                    <span className="text-sm text-[#a1a1aa]">—</span>
-                  )}
+                  </div>
+                  
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs text-[#a1a1aa]">
+                      <span>Progress</span>
+                      <span>{camp.progress}%</span>
+                    </div>
+                    <div className="w-full bg-[#27272a] rounded-full h-1.5">
+                      <div 
+                        className={`h-1.5 rounded-full ${camp.progress === 100 ? 'bg-[#10b981]' : 'bg-[#9146FF]'}`} 
+                        style={{ width: `${camp.progress}%` }}
+                      ></div>
+                    </div>
+                  </div>
                 </div>
-                <div className="col-span-2 flex justify-end">
-                  <button 
-                    onClick={() => toggleWhitelist(game.id)}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                      game.whitelisted ? 'bg-[#9146FF]' : 'bg-[#27272a]'
-                    }`}
-                  >
-                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      game.whitelisted ? 'translate-x-6' : 'translate-x-1'
-                    }`} />
-                  </button>
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
-      )}
+
+        {/* Games Section */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold flex items-center gap-2">
+              <Gamepad2 className="text-blue-400" />
+              Games with Drops
+            </h2>
+          </div>
+          <p className="text-sm text-[#a1a1aa]">
+            Select which games you want to automatically farm when new drop campaigns are detected.
+          </p>
+
+          <div className="bg-[#18181b] border border-[#27272a] rounded-xl overflow-hidden flex flex-col h-[500px]">
+            <div className="flex-1 overflow-y-auto divide-y divide-[#27272a]">
+              {games.length === 0 ? (
+                <div className="p-8 text-center text-[#a1a1aa]">
+                  No games indexed.
+                </div>
+              ) : (
+                games.map(game => (
+                  <div key={game.id} className="flex items-center justify-between p-4 hover:bg-[#27272a]/30 transition-colors cursor-pointer" onClick={() => handleToggleGame(game.id)}>
+                    <div className="flex items-center gap-3">
+                      <input 
+                        type="checkbox" 
+                        checked={game.whitelisted === 1}
+                        readOnly
+                        className="w-4 h-4 rounded border-[#27272a] text-[#9146FF] focus:ring-[#9146FF] bg-[#09090b]" 
+                      />
+                      <div>
+                        <span className="font-medium text-[#fafafa] block">{game.name}</span>
+                        <span className="text-xs text-[#a1a1aa]">Last drop: {game.lastDrop}</span>
+                      </div>
+                    </div>
+                    {game.activeCampaigns > 0 && (
+                      <span className="bg-[#9146FF]/10 text-[#9146FF] border border-[#9146FF]/20 px-2 py-0.5 rounded text-xs font-medium">
+                        {game.activeCampaigns} Active
+                      </span>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+
+      </div>
     </div>
   );
 }

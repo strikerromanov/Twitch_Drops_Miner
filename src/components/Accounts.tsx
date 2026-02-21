@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { Plus, Play, Square, RefreshCw, Trash2, ExternalLink, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Plus, Play, Square, RefreshCw, Trash2, ExternalLink, Loader2, AlertCircle, X, Activity, Gift, Coins, ChevronDown, ChevronUp } from 'lucide-react';
 import { useToast } from '../App';
 
 export default function Accounts() {
@@ -8,7 +8,16 @@ export default function Accounts() {
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [deviceAuth, setDeviceAuth] = useState<{ userCode: string, deviceCode: string, verificationUri: string, interval: number } | null>(null);
   const [authError, setAuthError] = useState('');
+  
+  // Expanded accounts
+  const [expandedAccounts, setExpandedAccounts] = useState<number[]>([]);
+
+  // Streamer Details Modal State
+  const [selectedStream, setSelectedStream] = useState<{ accountId: number, accountName: string, streamer: string } | null>(null);
+  const [streamLogs, setStreamLogs] = useState<any[]>([]);
+
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const logsIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const { showToast } = useToast();
 
   const fetchAccounts = () => {
@@ -17,7 +26,27 @@ export default function Accounts() {
 
   useEffect(() => {
     fetchAccounts();
+    const interval = setInterval(fetchAccounts, 5000);
+    return () => clearInterval(interval);
   }, []);
+
+  // Fetch logs for the selected stream modal
+  useEffect(() => {
+    if (selectedStream) {
+      const fetchLogs = () => {
+        fetch(`/api/logs?accountId=${selectedStream.accountId}&streamer=${selectedStream.streamer}`)
+          .then(r => r.json())
+          .then(setStreamLogs);
+      };
+      fetchLogs();
+      logsIntervalRef.current = setInterval(fetchLogs, 3000);
+    } else {
+      setStreamLogs([]);
+    }
+    return () => {
+      if (logsIntervalRef.current) clearInterval(logsIntervalRef.current);
+    };
+  }, [selectedStream]);
 
   const handleAddClick = async () => {
     setIsModalOpen(true);
@@ -66,22 +95,13 @@ export default function Accounts() {
             if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
             setAuthError(data.error);
           }
-          // If pending, do nothing and wait for next interval
-        } catch (err) {
-          // Ignore network errors during polling
-        }
+        } catch (err) {}
       }, deviceAuth.interval * 1000);
     }
-
     return () => {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     };
   }, [deviceAuth, isModalOpen]);
-
-  const handleCloseModal = () => {
-    setIsModalOpen(false);
-    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-  };
 
   const handleToggle = async (id: number) => {
     await fetch(`/api/accounts/${id}/toggle`, { method: 'POST' });
@@ -96,12 +116,18 @@ export default function Accounts() {
     }
   };
 
+  const toggleExpand = (id: number) => {
+    setExpandedAccounts(prev => 
+      prev.includes(id) ? prev.filter(a => a !== id) : [...prev, id]
+    );
+  };
+
   return (
     <div className="space-y-6">
       <header className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Accounts</h1>
-          <p className="text-[#a1a1aa] mt-1">Manage your connected Twitch accounts via Device Auth.</p>
+          <p className="text-[#a1a1aa] mt-1">Manage connected accounts and monitor active streams.</p>
         </div>
         <button 
           onClick={handleAddClick}
@@ -116,8 +142,8 @@ export default function Accounts() {
         <div className="grid grid-cols-12 gap-4 p-4 border-b border-[#27272a] bg-[#18181b]/50">
           <div className="col-span-3 col-header">Username</div>
           <div className="col-span-2 col-header">Status</div>
-          <div className="col-span-3 col-header">Current Target</div>
-          <div className="col-span-2 col-header text-right">Points</div>
+          <div className="col-span-4 col-header">Active Streams (Click for details)</div>
+          <div className="col-span-1 col-header text-right">Points</div>
           <div className="col-span-2 col-header text-right">Actions</div>
         </div>
         
@@ -128,59 +154,161 @@ export default function Accounts() {
             </div>
           )}
           {accounts.map(acc => (
-            <div key={acc.id} className="grid grid-cols-12 gap-4 p-4 items-center hover:bg-[#27272a]/30 transition-colors">
-              <div className="col-span-3 font-medium flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#9146FF] to-purple-400 flex items-center justify-center text-xs font-bold text-white">
-                  {acc.username.substring(0,2).toUpperCase()}
+            <div key={acc.id} className="flex flex-col">
+              <div className="grid grid-cols-12 gap-4 p-4 items-center hover:bg-[#27272a]/30 transition-colors">
+                <div className="col-span-3 font-medium flex items-center gap-3">
+                  <button 
+                    onClick={() => toggleExpand(acc.id)}
+                    className="p-1 text-[#a1a1aa] hover:text-white rounded transition-colors"
+                  >
+                    {expandedAccounts.includes(acc.id) ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                  </button>
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#9146FF] to-purple-400 flex items-center justify-center text-xs font-bold text-white">
+                    {acc.username.substring(0,2).toUpperCase()}
+                  </div>
+                  {acc.username}
                 </div>
-                {acc.username}
+                <div className="col-span-2">
+                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${
+                    acc.status === 'farming' 
+                      ? 'bg-[#10b981]/10 text-[#10b981] border-[#10b981]/20' 
+                      : 'bg-[#a1a1aa]/10 text-[#a1a1aa] border-[#a1a1aa]/20'
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${acc.status === 'farming' ? 'bg-[#10b981]' : 'bg-[#a1a1aa]'}`}></span>
+                    {acc.status.toUpperCase()}
+                  </span>
+                </div>
+                <div className="col-span-4 flex flex-wrap gap-2">
+                  {acc.activeStreams && acc.activeStreams.length > 0 ? (
+                    acc.activeStreams.map((stream: any, idx: number) => (
+                      <button 
+                        key={idx}
+                        onClick={() => setSelectedStream({ accountId: acc.id, accountName: acc.username, streamer: stream.streamer })}
+                        className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium border hover:opacity-80 transition-opacity ${
+                          stream.type === 'drop' 
+                            ? 'bg-[#9146FF]/10 text-[#9146FF] border-[#9146FF]/20' 
+                            : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                        }`}
+                        title={`Type: ${stream.type === 'drop' ? 'Drop Campaign' : 'Favorite Channel'}`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse"></span>
+                        {stream.streamer}
+                      </button>
+                    ))
+                  ) : (
+                    <span className="text-[#a1a1aa] text-sm">—</span>
+                  )}
+                </div>
+                <div className="col-span-1 text-right data-value text-[#fafafa]">
+                  {acc.points.toLocaleString()}
+                </div>
+                <div className="col-span-2 flex items-center justify-end gap-2">
+                  <button 
+                    onClick={() => handleToggle(acc.id)}
+                    className="p-1.5 text-[#a1a1aa] hover:text-[#10b981] hover:bg-[#27272a] rounded transition-colors" 
+                    title="Start/Stop"
+                  >
+                    {acc.status === 'farming' ? <Square size={16} /> : <Play size={16} />}
+                  </button>
+                  <button className="p-1.5 text-[#a1a1aa] hover:text-white hover:bg-[#27272a] rounded transition-colors" title="Force Refresh">
+                    <RefreshCw size={16} />
+                  </button>
+                  <button 
+                    onClick={() => handleDelete(acc.id)}
+                    className="p-1.5 text-[#a1a1aa] hover:text-red-400 hover:bg-[#27272a] rounded transition-colors" 
+                    title="Remove Account"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
               </div>
-              <div className="col-span-2">
-                <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${
-                  acc.status === 'farming' 
-                    ? 'bg-[#10b981]/10 text-[#10b981] border-[#10b981]/20' 
-                    : 'bg-[#a1a1aa]/10 text-[#a1a1aa] border-[#a1a1aa]/20'
-                }`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${acc.status === 'farming' ? 'bg-[#10b981]' : 'bg-[#a1a1aa]'}`}></span>
-                  {acc.status.toUpperCase()}
-                </span>
-              </div>
-              <div className="col-span-3 text-[#a1a1aa] flex items-center gap-2">
-                {acc.currentTarget ? (
-                  <>
-                    <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
-                    twitch.tv/{acc.currentTarget}
-                  </>
-                ) : (
-                  '—'
-                )}
-              </div>
-              <div className="col-span-2 text-right data-value text-[#fafafa]">
-                {acc.points.toLocaleString()}
-              </div>
-              <div className="col-span-2 flex items-center justify-end gap-2">
-                <button 
-                  onClick={() => handleToggle(acc.id)}
-                  className="p-1.5 text-[#a1a1aa] hover:text-[#10b981] hover:bg-[#27272a] rounded transition-colors" 
-                  title="Start/Stop"
-                >
-                  {acc.status === 'farming' ? <Square size={16} /> : <Play size={16} />}
-                </button>
-                <button className="p-1.5 text-[#a1a1aa] hover:text-white hover:bg-[#27272a] rounded transition-colors" title="Force Refresh">
-                  <RefreshCw size={16} />
-                </button>
-                <button 
-                  onClick={() => handleDelete(acc.id)}
-                  className="p-1.5 text-[#a1a1aa] hover:text-red-400 hover:bg-[#27272a] rounded transition-colors" 
-                  title="Remove Account"
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
+
+              {/* Expanded Followed Channels */}
+              {expandedAccounts.includes(acc.id) && (
+                <div className="bg-[#09090b] border-t border-[#27272a] p-4 pl-14">
+                  <h3 className="text-sm font-medium text-[#a1a1aa] mb-3 uppercase tracking-wider">Followed Channels</h3>
+                  {acc.followedChannels && acc.followedChannels.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {acc.followedChannels.map((channel: any) => (
+                        <div key={channel.id} className="bg-[#18181b] border border-[#27272a] rounded-lg p-3 flex flex-col gap-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className={`w-2 h-2 rounded-full ${channel.status === 'live' ? 'bg-red-500 animate-pulse' : 'bg-[#a1a1aa]'}`}></span>
+                              <span className="font-medium text-[#fafafa]">{channel.streamer}</span>
+                            </div>
+                            <button 
+                              onClick={() => setSelectedStream({ accountId: acc.id, accountName: acc.username, streamer: channel.streamer })}
+                              className="text-xs text-[#9146FF] hover:underline flex items-center gap-1"
+                            >
+                              History <ExternalLink size={12} />
+                            </button>
+                          </div>
+                          <div className="flex items-center justify-between text-xs text-[#a1a1aa]">
+                            <span className="flex items-center gap-1"><Coins size={12} /> {channel.points.toLocaleString()} pts</span>
+                            <span className="flex items-center gap-1"><Activity size={12} /> {channel.bets} bets</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-[#a1a1aa]">No followed channels indexed yet.</p>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>
       </div>
+
+      {/* Streamer Details Modal */}
+      {selectedStream && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-[#18181b] border border-[#27272a] rounded-xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[80vh]">
+            <div className="p-4 border-b border-[#27272a] flex items-center justify-between bg-[#18181b]/50">
+              <div>
+                <h2 className="text-lg font-semibold flex items-center gap-2">
+                  <Activity size={18} className="text-[#9146FF]" />
+                  Activity History: {selectedStream.streamer}
+                </h2>
+                <p className="text-sm text-[#a1a1aa]">Account: <span className="text-white font-medium">{selectedStream.accountName}</span></p>
+              </div>
+              <button 
+                onClick={() => setSelectedStream(null)}
+                className="p-2 text-[#a1a1aa] hover:text-white hover:bg-[#27272a] rounded-lg transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="p-4 flex-1 overflow-y-auto bg-[#09090b]">
+              {streamLogs.length === 0 ? (
+                <div className="text-center text-[#a1a1aa] py-8">
+                  <Loader2 size={24} className="animate-spin mx-auto mb-2 text-[#9146FF]" />
+                  Waiting for activity on {selectedStream.streamer}...
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {streamLogs.map(log => (
+                    <div key={log.id} className="flex gap-3 text-sm bg-[#18181b] p-3 rounded-lg border border-[#27272a]">
+                      <div className="mt-0.5 shrink-0">
+                        {log.type === 'points' ? <Coins size={16} className="text-yellow-500" /> :
+                         log.type === 'drop' ? <Gift size={16} className="text-[#9146FF]" /> :
+                         <Activity size={16} className="text-blue-400" />}
+                      </div>
+                      <div>
+                        <p className="text-[#fafafa]">{log.message}</p>
+                        <p className="text-xs text-[#a1a1aa] mt-1 font-mono">
+                          {new Date(log.time).toLocaleTimeString()}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Device Auth Modal */}
       {isModalOpen && (
@@ -266,7 +394,7 @@ export default function Accounts() {
 
             <div className="flex justify-end gap-3">
               <button 
-                onClick={handleCloseModal}
+                onClick={() => { setIsModalOpen(false); if (pollIntervalRef.current) clearInterval(pollIntervalRef.current); }}
                 className="px-4 py-2 rounded-lg font-medium text-[#a1a1aa] hover:text-white hover:bg-[#27272a] transition-colors"
               >
                 {authError ? 'Close' : 'Cancel'}

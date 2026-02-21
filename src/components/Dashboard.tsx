@@ -169,7 +169,14 @@ export default function Dashboard() {
               <div key={log.id} className="flex gap-3 text-sm">
                 <div className="w-2 h-2 rounded-full mt-1.5 shrink-0 bg-[#9146FF]"></div>
                 <div>
-                  <p className="text-[#fafafa]">{log.message}</p>
+                  <p className="text-[#fafafa]">
+                    {log.username && log.streamer ? (
+                      <span className="text-[#a1a1aa]">[{log.username} @ {log.streamer}] </span>
+                    ) : log.username ? (
+                      <span className="text-[#a1a1aa]">[{log.username}] </span>
+                    ) : null}
+                    {log.message}
+                  </p>
                   <p className="text-xs text-[#a1a1aa] mt-0.5 font-mono">
                     {new Date(log.time).toLocaleTimeString()}
                   </p>
