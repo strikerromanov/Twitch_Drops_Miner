@@ -25,12 +25,19 @@ export default function Dashboard() {
   const [logs, setLogs] = useState<any[]>([]);
 
   useEffect(() => {
-    fetch("/api/stats")
-      .then((r) => r.json())
-      .then(setStats);
-    fetch("/api/logs")
-      .then((r) => r.json())
-      .then(setLogs);
+    const fetchData = () => {
+      fetch("/api/stats")
+        .then((r) => r.json())
+        .then(setStats);
+      fetch("/api/logs")
+        .then((r) => r.json())
+        .then(setLogs);
+    };
+    
+    fetchData(); // Initial fetch
+    const interval = setInterval(fetchData, 5000); // Poll every 5 seconds
+    
+    return () => clearInterval(interval);
   }, []);
 
   if (!stats)

@@ -17,6 +17,7 @@ async function startServer() {
     CREATE TABLE IF NOT EXISTS accounts (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, status TEXT, currentTarget TEXT, points INTEGER);
     CREATE TABLE IF NOT EXISTS bet_history (id INTEGER PRIMARY KEY AUTOINCREMENT, streamer TEXT, winRate REAL, totalBets INTEGER, riskLevel TEXT, recommendedStrategy TEXT);
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
+    CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, time TEXT, type TEXT, message TEXT);
   `);
 
   try {
@@ -38,6 +39,12 @@ async function startServer() {
     insertBet.run('tarik', 45.2, 89, 'High', 'Martingale');
     insertBet.run('zackrawrr', 88.1, 210, 'Very Low', 'Kelly Criterion');
     insertBet.run('kyedae', 55.4, 42, 'Medium', 'Fibonacci');
+    
+    const insertLog = db.prepare('INSERT INTO logs (time, type, message) VALUES (?, ?, ?)');
+    insertLog.run(new Date(Date.now() - 1000 * 60 * 5).toISOString(), "drop", "Claimed 'Spray' for Valorant on GamerOne");
+    insertLog.run(new Date(Date.now() - 1000 * 60 * 12).toISOString(), "points", "Claimed 50 points on shroud for GamerOne");
+    insertLog.run(new Date(Date.now() - 1000 * 60 * 25).toISOString(), "bet", "Won 500 points betting on 'Yes' in tarik's stream");
+    insertLog.run(new Date(Date.now() - 1000 * 60 * 40).toISOString(), "system", "AltAccount99 switched target to tarik (Priority: Drops)");
   }
 
   // API Routes
@@ -108,8 +115,13 @@ async function startServer() {
       
       const data = await response.json();
       
-      if (response.status === 400 && data.message === 'authorization_pending') {
-        return res.json({ status: 'pending' });
+      // Twitch returns 400 with error="authorization_pending" while waiting for user
+      if (response.status === 400) {
+        if (data.error === 'authorization_pending') {
+          return res.json({ status: 'pending' });
+        }
+        // If it's expired or another error, return it to the client
+        return res.status(400).json({ error: data.message || data.error || "Authentication failed." });
       }
       
       if (data.access_token) {
@@ -131,6 +143,10 @@ async function startServer() {
         // Save to DB
         const insert = db.prepare('INSERT INTO accounts (username, status, currentTarget, points, accessToken, refreshToken) VALUES (?, ?, ?, ?, ?, ?)');
         insert.run(username, 'idle', null, 0, data.access_token, data.refresh_token);
+
+        // Log the activity
+        const insertLog = db.prepare('INSERT INTO logs (time, type, message) VALUES (?, ?, ?)');
+        insertLog.run(new Date().toISOString(), "system", `Account ${username} successfully authenticated and linked.`);
 
         return res.json({ status: 'success', username });
       }
@@ -169,7 +185,7 @@ async function startServer() {
   });
 
   app.post("/api/factory-reset", (req, res) => {
-    db.exec('DELETE FROM accounts; DELETE FROM bet_history; DELETE FROM settings;');
+    db.exec('DELETE FROM accounts; DELETE FROM bet_history; DELETE FROM settings; DELETE FROM logs;');
     res.json({ success: true });
   });
 
@@ -193,12 +209,7 @@ async function startServer() {
   });
 
   app.get("/api/logs", (req, res) => {
-    res.json([
-      { id: 1, time: new Date(Date.now() - 1000 * 60 * 5).toISOString(), type: "drop", message: "Claimed 'Spray' for Valorant on GamerOne" },
-      { id: 2, time: new Date(Date.now() - 1000 * 60 * 12).toISOString(), type: "points", message: "Claimed 50 points on shroud for GamerOne" },
-      { id: 3, time: new Date(Date.now() - 1000 * 60 * 25).toISOString(), type: "bet", message: "Won 500 points betting on 'Yes' in tarik's stream" },
-      { id: 4, time: new Date(Date.now() - 1000 * 60 * 40).toISOString(), type: "system", message: "AltAccount99 switched target to tarik (Priority: Drops)" },
-    ]);
+    res.json(db.prepare('SELECT * FROM logs ORDER BY id DESC LIMIT 50').all());
   });
 
   // Vite middleware for development
