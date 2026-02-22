@@ -244,8 +244,16 @@ export default function Accounts() {
                             </button>
                           </div>
                           <div className="flex items-center justify-between text-xs text-[#a1a1aa]">
-                            <span className="flex items-center gap-1"><Coins size={12} /> {channel.points.toLocaleString()} pts</span>
-                            <span className="flex items-center gap-1"><Activity size={12} /> {channel.bets} bets</span>
+                            {channel.status === 'live' ? (
+                              <>
+                                <span className="truncate max-w-[120px]" title={channel.game_name}>{channel.game_name || 'Just Chatting'}</span>
+                                <span className="flex items-center gap-1 text-red-400">
+                                  <Activity size={12} /> {channel.viewer_count?.toLocaleString() || 0}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="text-[#a1a1aa]/50">Offline</span>
+                            )}
                           </div>
                         </div>
                       ))}

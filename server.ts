@@ -19,149 +19,113 @@ async function startServer() {
   db.pragma('journal_mode = WAL');
 
   db.exec(`
-    CREATE TABLE IF NOT EXISTS accounts (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, status TEXT, currentTarget TEXT, points INTEGER, accessToken TEXT, refreshToken TEXT);
+    CREATE TABLE IF NOT EXISTS accounts (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, twitch_id TEXT, status TEXT, currentTarget TEXT, points INTEGER, accessToken TEXT, refreshToken TEXT);
     CREATE TABLE IF NOT EXISTS bet_history (id INTEGER PRIMARY KEY AUTOINCREMENT, streamer TEXT, winRate REAL, totalBets INTEGER, riskLevel TEXT, recommendedStrategy TEXT);
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
     CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, time TEXT, type TEXT, message TEXT, account_id INTEGER, streamer TEXT);
     CREATE TABLE IF NOT EXISTS favorite_channels (id INTEGER PRIMARY KEY AUTOINCREMENT, streamer TEXT);
     CREATE TABLE IF NOT EXISTS campaigns (id INTEGER PRIMARY KEY AUTOINCREMENT, game TEXT, name TEXT, streamer TEXT, progress INTEGER, status TEXT, timeRemaining TEXT);
     CREATE TABLE IF NOT EXISTS active_streams (id INTEGER PRIMARY KEY AUTOINCREMENT, account_id INTEGER, streamer TEXT, type TEXT);
-    CREATE TABLE IF NOT EXISTS followed_channels (id INTEGER PRIMARY KEY AUTOINCREMENT, account_id INTEGER, streamer TEXT, status TEXT, points INTEGER, bets INTEGER);
+    CREATE TABLE IF NOT EXISTS followed_channels (id INTEGER PRIMARY KEY AUTOINCREMENT, account_id INTEGER, streamer TEXT, streamer_id TEXT, status TEXT, game_name TEXT, viewer_count INTEGER, points INTEGER, bets INTEGER);
     CREATE TABLE IF NOT EXISTS games (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, activeCampaigns INTEGER, whitelisted INTEGER, lastDrop TEXT);
   `);
 
+  try { db.exec('ALTER TABLE accounts ADD COLUMN twitch_id TEXT'); } catch(e) {}
+  try { db.exec('ALTER TABLE followed_channels ADD COLUMN streamer_id TEXT'); } catch(e) {}
+  try { db.exec('ALTER TABLE followed_channels ADD COLUMN game_name TEXT'); } catch(e) {}
+  try { db.exec('ALTER TABLE followed_channels ADD COLUMN viewer_count INTEGER'); } catch(e) {}
   try { db.exec('ALTER TABLE logs ADD COLUMN account_id INTEGER'); } catch(e) {}
   try { db.exec('ALTER TABLE logs ADD COLUMN streamer TEXT'); } catch(e) {}
-
-  // Seed initial data
-  if (db.prepare('SELECT COUNT(*) as c FROM accounts').get().c === 0) {
-    const insertAcc = db.prepare('INSERT INTO accounts (username, status, points) VALUES (?, ?, ?)');
-    insertAcc.run('GamerOne', 'idle', 450200);
-    insertAcc.run('AltAccount99', 'idle', 12050);
-
-    const insertBet = db.prepare('INSERT INTO bet_history (streamer, winRate, totalBets, riskLevel, recommendedStrategy) VALUES (?, ?, ?, ?, ?)');
-    insertBet.run('shroud', 72.5, 145, 'Low', 'Kelly Criterion');
-    insertBet.run('tarik', 45.2, 89, 'High', 'Martingale');
-    insertBet.run('zackrawrr', 88.1, 210, 'Very Low', 'Kelly Criterion');
-    
-    db.prepare('INSERT INTO logs (time, type, message) VALUES (?, ?, ?)').run(new Date().toISOString(), "system", "Database initialized. Ready to start farming.");
-  }
-
-  if (db.prepare('SELECT COUNT(*) as c FROM followed_channels').get().c === 0) {
-    const insertFollowed = db.prepare('INSERT INTO followed_channels (account_id, streamer, status, points, bets) VALUES (?, ?, ?, ?, ?)');
-    insertFollowed.run(1, 'shroud', 'live', 15000, 45);
-    insertFollowed.run(1, 'tarik', 'live', 8200, 12);
-    insertFollowed.run(1, 'zackrawrr', 'offline', 450, 0);
-    insertFollowed.run(1, 'kyedae', 'offline', 1200, 3);
-    
-    insertFollowed.run(2, 'tarik', 'live', 5000, 10);
-    insertFollowed.run(2, 'summit1g', 'offline', 200, 0);
-  }
-
-  if (db.prepare('SELECT COUNT(*) as c FROM games').get().c === 0) {
-    const insertGame = db.prepare('INSERT INTO games (name, activeCampaigns, whitelisted, lastDrop) VALUES (?, ?, ?, ?)');
-    insertGame.run('Valorant', 1, 1, 'Currently Active');
-    insertGame.run('Rust', 0, 1, '1 week ago');
-    insertGame.run('Path of Exile', 0, 0, '3 months ago');
-    insertGame.run('Path of Exile 2', 0, 1, '1 month ago');
-    insertGame.run('Overwatch 2', 1, 1, 'Currently Active');
-    insertGame.run('Warframe', 0, 0, '2 weeks ago');
-  }
-
-  if (db.prepare('SELECT COUNT(*) as c FROM favorite_channels').get().c === 0) {
-    const insertFav = db.prepare('INSERT INTO favorite_channels (streamer) VALUES (?)');
-    ['shroud', 'tarik', 'zackrawrr', 'kyedae', 'summit1g', 'xQc', 'loltyler1', 'lirik', 'cohhcarnage'].forEach(s => insertFav.run(s));
-  }
-
-  if (db.prepare('SELECT COUNT(*) as c FROM campaigns').get().c === 0) {
-    const insertCamp = db.prepare('INSERT INTO campaigns (game, name, streamer, progress, status, timeRemaining) VALUES (?, ?, ?, ?, ?, ?)');
-    insertCamp.run('Valorant', 'VCT Masters Drops', 'valorant', 75, 'active', '45m');
-    insertCamp.run('Rust', 'Rustoria Drops', 'posty', 10, 'active', '2h');
-    insertCamp.run('Overwatch 2', 'Season 10 Drops', 'emongg', 0, 'active', '4h');
-    insertCamp.run('Path of Exile', 'League Launch', 'zizaran', 100, 'completed', '0m');
-  }
 
   // Ensure default settings
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('concurrentStreams', '10')").run();
 
-  // --- BACKGROUND FARMING ENGINE (SIMULATION) ---
-  setInterval(() => {
-    const farmingAccounts = db.prepare("SELECT * FROM accounts WHERE status = 'farming'").all() as any[];
-    const settings = db.prepare("SELECT * FROM settings").all() as any[];
-    const maxConcurrent = parseInt(settings.find(s => s.key === 'concurrentStreams')?.value || '10');
-    
-    // 20/80 Split: 20% Drops, 80% Favorites
-    const dropLimit = Math.max(1, Math.floor(maxConcurrent * 0.2));
-    const favLimit = maxConcurrent - dropLimit;
+  // --- REAL TWITCH HELIX API ENGINE ---
+  // This engine uses the official Twitch API to fetch real live statuses of your followed channels.
+  setInterval(async () => {
+    const farmingAccounts = db.prepare("SELECT * FROM accounts WHERE status = 'farming' AND accessToken IS NOT NULL").all() as any[];
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'twitchClientId'").get() as {value: string} | undefined;
+    const clientId = row?.value;
 
-    // Only fetch active campaigns for games that are whitelisted
-    const activeCampaigns = db.prepare(`
-      SELECT c.* FROM campaigns c 
-      JOIN games g ON c.game = g.name 
-      WHERE c.status = 'active' AND g.whitelisted = 1
-    `).all() as any[];
+    if (!clientId) return;
 
-    farmingAccounts.forEach(acc => {
-      const currentStreams = db.prepare("SELECT * FROM active_streams WHERE account_id = ?").all(acc.id) as any[];
-      const currentDrops = currentStreams.filter(s => s.type === 'drop');
-      const currentFavs = currentStreams.filter(s => s.type === 'favorite');
+    for (const acc of farmingAccounts) {
+      try {
+        // 1. Get all followed channels for this account
+        const follows = db.prepare("SELECT * FROM followed_channels WHERE account_id = ?").all(acc.id) as any[];
+        if (follows.length === 0) continue;
 
-      // Fetch live followed channels for this specific account
-      const followedChannels = db.prepare("SELECT * FROM followed_channels WHERE account_id = ? AND status = 'live'").all(acc.id) as any[];
+        // Helix allows up to 100 user_ids per request
+        const streamerIds = follows.map(f => f.streamer_id).filter(id => id);
+        if (streamerIds.length === 0) continue;
 
-      // 1. Assign Drop Streams
-      if (currentDrops.length < dropLimit && activeCampaigns.length > 0) {
-        const needed = dropLimit - currentDrops.length;
-        for (let i = 0; i < needed; i++) {
-          const camp = activeCampaigns[Math.floor(Math.random() * activeCampaigns.length)];
-          // Avoid duplicates
-          if (!currentStreams.find(s => s.streamer === camp.streamer)) {
-            db.prepare("INSERT INTO active_streams (account_id, streamer, type) VALUES (?, ?, ?)").run(acc.id, camp.streamer, 'drop');
-            db.prepare("INSERT INTO logs (time, type, message, account_id, streamer) VALUES (?, ?, ?, ?, ?)").run(
-              new Date().toISOString(), "system", `Joined ${camp.streamer} for ${camp.game} drops.`, acc.id, camp.streamer
+        // Chunk into 100s
+        const chunkSize = 100;
+        const liveStreamsMap = new Map();
+
+        for (let i = 0; i < streamerIds.length; i += chunkSize) {
+          const chunk = streamerIds.slice(i, i + chunkSize);
+          const queryParams = chunk.map(id => `user_id=${id}`).join('&');
+          
+          const streamsRes = await fetch(`https://api.twitch.tv/helix/streams?${queryParams}`, {
+            headers: {
+              'Authorization': `Bearer ${acc.accessToken}`,
+              'Client-Id': clientId
+            }
+          });
+
+          if (streamsRes.ok) {
+            const streamsData = await streamsRes.json();
+            streamsData.data.forEach((stream: any) => {
+              liveStreamsMap.set(stream.user_id, stream);
+            });
+          } else if (streamsRes.status === 401) {
+            // Token expired - in a full production app, implement refresh token flow here
+            db.prepare("UPDATE accounts SET status = 'idle' WHERE id = ?").run(acc.id);
+            db.prepare("INSERT INTO logs (time, type, message, account_id) VALUES (?, ?, ?, ?)").run(
+              new Date().toISOString(), "system", `Access token expired. Farming stopped.`, acc.id
             );
+            continue;
           }
         }
-      }
 
-      // 2. Assign Followed Streams
-      if (currentFavs.length < favLimit && followedChannels.length > 0) {
-        const needed = favLimit - currentFavs.length;
-        for (let i = 0; i < needed; i++) {
-          const fav = followedChannels[Math.floor(Math.random() * followedChannels.length)];
-          if (!currentStreams.find(s => s.streamer === fav.streamer) && !db.prepare("SELECT 1 FROM active_streams WHERE account_id = ? AND streamer = ?").get(acc.id, fav.streamer)) {
-            db.prepare("INSERT INTO active_streams (account_id, streamer, type) VALUES (?, ?, ?)").run(acc.id, fav.streamer, 'favorite');
-            db.prepare("INSERT INTO logs (time, type, message, account_id, streamer) VALUES (?, ?, ?, ?, ?)").run(
-              new Date().toISOString(), "system", `Joined followed channel ${fav.streamer}.`, acc.id, fav.streamer
+        // 2. Update DB with real live status
+        let newlyLiveCount = 0;
+        for (const follow of follows) {
+          const liveData = liveStreamsMap.get(follow.streamer_id);
+          
+          if (liveData) {
+            if (follow.status !== 'live') {
+              newlyLiveCount++;
+              db.prepare("INSERT INTO logs (time, type, message, account_id, streamer) VALUES (?, ?, ?, ?, ?)").run(
+                new Date().toISOString(), "system", `${follow.streamer} went LIVE playing ${liveData.game_name}.`, acc.id, follow.streamer
+              );
+            }
+            db.prepare("UPDATE followed_channels SET status = 'live', game_name = ?, viewer_count = ? WHERE id = ?").run(
+              liveData.game_name, liveData.viewer_count, follow.id
             );
+          } else {
+            db.prepare("UPDATE followed_channels SET status = 'offline', game_name = NULL, viewer_count = 0 WHERE id = ?").run(follow.id);
           }
         }
-      }
 
-      // 3. Simulate Activity for Active Streams
-      const active = db.prepare("SELECT * FROM active_streams WHERE account_id = ?").all(acc.id) as any[];
-      active.forEach(stream => {
-        const rand = Math.random();
+        // 3. Update Active Streams (The ones we are "watching")
+        const liveFollows = db.prepare("SELECT * FROM followed_channels WHERE account_id = ? AND status = 'live'").all(acc.id) as any[];
+        db.prepare("DELETE FROM active_streams WHERE account_id = ?").run(acc.id); // Clear old
         
-        if (rand > 0.90) { // 10% chance to claim points
-          const points = Math.floor(Math.random() * 50) + 10;
-          db.prepare("UPDATE accounts SET points = points + ? WHERE id = ?").run(points, acc.id);
-          db.prepare("INSERT INTO logs (time, type, message, account_id, streamer) VALUES (?, ?, ?, ?, ?)").run(
-            new Date().toISOString(), "points", `Claimed ${points} channel points.`, acc.id, stream.streamer
-          );
-        } else if (stream.type === 'drop' && rand > 0.85 && rand <= 0.90) { // 5% chance to progress drop
-          db.prepare("INSERT INTO logs (time, type, message, account_id, streamer) VALUES (?, ?, ?, ?, ?)").run(
-            new Date().toISOString(), "drop", `Drop progress updated (approx. 15m).`, acc.id, stream.streamer
-          );
-        } else if (rand > 0.80 && rand <= 0.85) { // 5% chance to place a bet
-          const betAmount = Math.floor(Math.random() * 500) + 100;
-          db.prepare("INSERT INTO logs (time, type, message, account_id, streamer) VALUES (?, ?, ?, ?, ?)").run(
-            new Date().toISOString(), "bet", `Placed ${betAmount} points bet using Kelly Criterion.`, acc.id, stream.streamer
-          );
+        // Watch up to concurrent limit
+        const limit = parseInt(db.prepare("SELECT value FROM settings WHERE key = 'concurrentStreams'").get()?.value || '10');
+        const toWatch = liveFollows.slice(0, limit);
+        
+        for (const watch of toWatch) {
+          db.prepare("INSERT INTO active_streams (account_id, streamer, type) VALUES (?, ?, ?)").run(acc.id, watch.streamer, 'favorite');
         }
-      });
-    });
-  }, 5000);
+
+      } catch (error) {
+        console.error(`Error processing account ${acc.username}:`, error);
+      }
+    }
+  }, 30000); // Poll Twitch API every 30 seconds
 
   // API Routes
   app.get("/api/stats", (req, res) => {
@@ -169,9 +133,9 @@ async function startServer() {
     const totalPoints = accounts.reduce((sum, acc) => sum + acc.points, 0);
     res.json({ 
       totalPoints, 
-      dropsClaimed: 142, 
+      dropsClaimed: 0, // Real drops require headless browser
       activeAccounts: accounts.filter(a => a.status === 'farming').length, 
-      uptime: "14d 5h 23m" 
+      uptime: "Real-time API Active" 
     });
   });
 
@@ -179,7 +143,7 @@ async function startServer() {
     const accounts = db.prepare('SELECT * FROM accounts').all() as any[];
     const accountsWithStreams = accounts.map(acc => {
       const activeStreams = db.prepare('SELECT streamer, type FROM active_streams WHERE account_id = ?').all(acc.id);
-      const followedChannels = db.prepare('SELECT * FROM followed_channels WHERE account_id = ?').all(acc.id);
+      const followedChannels = db.prepare('SELECT * FROM followed_channels WHERE account_id = ? ORDER BY status DESC, viewer_count DESC').all(acc.id);
       return { ...acc, activeStreams, followedChannels };
     });
     res.json(accountsWithStreams);
@@ -223,7 +187,11 @@ async function startServer() {
       const response = await fetch('https://id.twitch.tv/oauth2/device', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ client_id: clientId, scopes: 'user:read:email chat:read chat:edit' })
+        body: new URLSearchParams({ 
+          client_id: clientId, 
+          // Added user:read:follows to fetch real followed channels
+          scopes: 'user:read:email chat:read chat:edit user:read:follows' 
+        })
       });
       const data = await response.json();
       if (!response.ok) return res.status(400).json({ error: data.message || "Failed to get device code." });
@@ -253,28 +221,54 @@ async function startServer() {
       }
       
       if (data.access_token) {
+        // 1. Fetch Real User Profile
         const userRes = await fetch('https://api.twitch.tv/helix/users', {
           headers: { 'Authorization': `Bearer ${data.access_token}`, 'Client-Id': clientId }
         });
         const userData = await userRes.json();
         if (!userData.data || userData.data.length === 0) return res.status(400).json({ error: "Failed to fetch profile." });
         
-        const username = userData.data[0].login;
-        const insertResult = db.prepare('INSERT INTO accounts (username, status, points, accessToken, refreshToken) VALUES (?, ?, ?, ?, ?)').run(username, 'idle', 0, data.access_token, data.refresh_token);
+        const user = userData.data[0];
+        const insertResult = db.prepare('INSERT INTO accounts (username, twitch_id, status, points, accessToken, refreshToken) VALUES (?, ?, ?, ?, ?, ?)').run(
+          user.login, user.id, 'idle', 0, data.access_token, data.refresh_token
+        );
         const newAccountId = insertResult.lastInsertRowid;
         
-        // Mock followed channels for the new account
-        const insertFollowed = db.prepare('INSERT INTO followed_channels (account_id, streamer, status, points, bets) VALUES (?, ?, ?, ?, ?)');
-        insertFollowed.run(newAccountId, 'shroud', 'live', 0, 0);
-        insertFollowed.run(newAccountId, 'tarik', 'live', 0, 0);
-        insertFollowed.run(newAccountId, 'zackrawrr', 'offline', 0, 0);
-        insertFollowed.run(newAccountId, 'kyedae', 'live', 0, 0);
+        db.prepare('INSERT INTO logs (time, type, message, account_id) VALUES (?, ?, ?, ?)').run(
+          new Date().toISOString(), "system", `Account ${user.login} linked. Fetching real followed channels...`, newAccountId
+        );
+
+        // 2. Fetch REAL Followed Channels
+        let cursor = null;
+        let fetchedCount = 0;
+        const insertFollowed = db.prepare('INSERT INTO followed_channels (account_id, streamer, streamer_id, status, points, bets) VALUES (?, ?, ?, ?, ?, ?)');
         
-        db.prepare('INSERT INTO logs (time, type, message) VALUES (?, ?, ?)').run(new Date().toISOString(), "system", `Account ${username} linked and followed channels indexed.`);
-        return res.json({ status: 'success', username });
+        do {
+          const followRes = await fetch(`https://api.twitch.tv/helix/channels/followed?user_id=${user.id}&first=100${cursor ? `&after=${cursor}` : ''}`, {
+            headers: { 'Authorization': `Bearer ${data.access_token}`, 'Client-Id': clientId }
+          });
+          
+          if (!followRes.ok) break;
+          const followData = await followRes.json();
+          
+          if (followData.data) {
+            for (const follow of followData.data) {
+              insertFollowed.run(newAccountId, follow.broadcaster_login, follow.broadcaster_id, 'offline', 0, 0);
+              fetchedCount++;
+            }
+          }
+          cursor = followData.pagination?.cursor;
+        } while (cursor && fetchedCount < 500); // Limit to 500 follows to prevent massive DB inserts on huge accounts
+
+        db.prepare('INSERT INTO logs (time, type, message, account_id) VALUES (?, ?, ?, ?)').run(
+          new Date().toISOString(), "system", `Successfully indexed ${fetchedCount} real followed channels.`, newAccountId
+        );
+
+        return res.json({ status: 'success', username: user.login });
       }
       res.status(400).json({ error: data.message || "Authentication failed." });
     } catch (error) {
+      console.error(error);
       res.status(500).json({ error: "Internal server error." });
     }
   });
@@ -282,6 +276,7 @@ async function startServer() {
   app.delete("/api/accounts/:id", (req, res) => {
     db.prepare('DELETE FROM accounts WHERE id = ?').run(req.params.id);
     db.prepare('DELETE FROM active_streams WHERE account_id = ?').run(req.params.id);
+    db.prepare('DELETE FROM followed_channels WHERE account_id = ?').run(req.params.id);
     res.json({ success: true });
   });
 
@@ -304,7 +299,7 @@ async function startServer() {
   });
 
   app.post("/api/factory-reset", (req, res) => {
-    db.exec('DELETE FROM accounts; DELETE FROM bet_history; DELETE FROM settings; DELETE FROM logs; DELETE FROM active_streams; DELETE FROM favorite_channels; DELETE FROM campaigns;');
+    db.exec('DELETE FROM accounts; DELETE FROM bet_history; DELETE FROM settings; DELETE FROM logs; DELETE FROM active_streams; DELETE FROM favorite_channels; DELETE FROM campaigns; DELETE FROM followed_channels;');
     res.json({ success: true });
   });
 

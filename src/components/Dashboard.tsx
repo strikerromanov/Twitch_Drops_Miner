@@ -66,24 +66,28 @@ export default function Dashboard() {
             value: stats.totalPoints.toLocaleString(),
             icon: Coins,
             color: "text-yellow-500",
+            subtext: "Requires Desktop Worker"
           },
           {
             label: "Drops Claimed",
             value: stats.dropsClaimed,
             icon: Gift,
             color: "text-[#9146FF]",
+            subtext: "Requires Desktop Worker"
           },
           {
             label: "Active Accounts",
             value: stats.activeAccounts,
             icon: Server,
             color: "text-[#10b981]",
+            subtext: "Online & Polling"
           },
           {
             label: "System Uptime",
             value: stats.uptime,
             icon: Clock,
             color: "text-blue-400",
+            subtext: "Helix API Connected"
           },
         ].map((stat, i) => (
           <div
@@ -100,6 +104,7 @@ export default function Dashboard() {
               <p className="text-2xl font-mono font-semibold mt-1">
                 {stat.value}
               </p>
+              <p className="text-xs text-[#a1a1aa] mt-1">{stat.subtext}</p>
             </div>
           </div>
         ))}
