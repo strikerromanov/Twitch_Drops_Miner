@@ -41,10 +41,22 @@ interface StreamerStats {
   riskLevel: 'low' | 'medium' | 'high';
 }
 
+// Circuit breaker state for API calls
+interface CircuitBreakerState {
+  failures: number;
+  lastFailureTime: number;
+  isOpen: boolean;
+}
+
 // --- GLOBAL STATE ---
 let db: Database.Database;
 const activeChatClients = new Map<number, tmi.Client>();
 const bettingStats = new Map<string, StreamerStats>();
+const circuitBreakers = new Map<string, CircuitBreakerState>();
+
+// Circuit breaker configuration
+const CIRCUIT_BREAKER_THRESHOLD = 5;
+const CIRCUIT_BREAKER_TIMEOUT = 60000; // 1 minute
 
 async function startServer() {
   const app = express();
@@ -60,7 +72,7 @@ async function startServer() {
   db = new Database(path.join(dataDir, 'farm.db'));
   db.pragma('journal_mode = WAL');
 
-  // --- ENHANCED DATABASE SCHEMA ---
+  // --- ENHANCED DATABASE SCHEMA WITH INDEXES ---
   db.exec(`
     CREATE TABLE IF NOT EXISTS accounts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -171,6 +183,18 @@ async function startServer() {
     );
   `);
 
+  // --- CREATE DATABASE INDEXES FOR PERFORMANCE ---
+  try {
+    console.log('Creating database indexes for performance...');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_followed_account_streamer ON followed_channels(account_id, streamer);');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_logs_time ON logs(time DESC);');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_claim_history_account_time ON point_claim_history(account_id, claimed_at DESC);');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_betting_streamer ON betting_stats(streamer);');
+    console.log('Database indexes created successfully');
+  } catch (error) {
+    console.error('Error creating indexes:', error);
+  }
+
   try { db.exec('ALTER TABLE accounts ADD COLUMN twitch_id TEXT'); } catch(e) {}
   try { db.exec('ALTER TABLE followed_channels ADD COLUMN streamer_id TEXT'); } catch(e) {}
   try { db.exec('ALTER TABLE followed_channels ADD COLUMN game_name TEXT'); } catch(e) {}
@@ -184,14 +208,211 @@ async function startServer() {
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('maxBetPercentage', '5')").run();
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('dropAllocation', '20')").run();
 
-  loadBettingStats();
-
-  // --- HELPER FUNCTIONS ---
+  // --- HELPER FUNCTIONS (Defined early for use in other functions) ---
   function log(message: string, type: string = 'system', accountId?: number, streamer?: string) {
     const stmt = db.prepare('INSERT INTO logs (time, type, message, account_id, streamer) VALUES (?, ?, ?, ?, ?)');
     stmt.run(new Date().toISOString(), type, message, accountId || null, streamer || null);
     console.log(`[${type.toUpperCase()}] ${message}`);
   }
+
+  async function disconnectChatAccount(accountId: number) {
+    const client = activeChatClients.get(accountId);
+    if (client) {
+      try {
+        await client.disconnect();
+        activeChatClients.delete(accountId);
+      } catch (error) {
+        console.error(`Error disconnecting chat:`, error);
+      }
+    }
+  }
+
+  // --- CONFIG VALIDATION ---
+  function validateSettings(): { valid: boolean; errors: string[] } {
+    const errors: string[] = [];
+    
+    try {
+      const maxBetPercent = parseInt(db.prepare("SELECT value FROM settings WHERE key = 'maxBetPercentage'").get()?.value || '5');
+      if (maxBetPercent < 1 || maxBetPercent > 20) {
+        errors.push('maxBetPercentage must be between 1 and 20');
+      }
+      
+      const concurrentStreams = parseInt(db.prepare("SELECT value FROM settings WHERE key = 'concurrentStreams'").get()?.value || '10');
+      if (concurrentStreams < 1 || concurrentStreams > 10) {
+        errors.push('concurrentStreams must be between 1 and 10');
+      }
+      
+      const pointClaimInterval = parseInt(db.prepare("SELECT value FROM settings WHERE key = 'pointClaimInterval'").get()?.value || '300');
+      if (pointClaimInterval < 60 || pointClaimInterval > 1800) {
+        errors.push('pointClaimInterval must be between 60 and 1800 seconds');
+      }
+      
+      const dropAllocation = parseInt(db.prepare("SELECT value FROM settings WHERE key = 'dropAllocation'").get()?.value || '20');
+      if (dropAllocation < 10 || dropAllocation > 50) {
+        errors.push('dropAllocation must be between 10 and 50');
+      }
+    } catch (error) {
+      errors.push(`Error validating settings: ${error}`);
+    }
+    
+    return { valid: errors.length === 0, errors };
+  }
+
+  // --- ENHANCED FETCH WITH RETRY & CIRCUIT BREAKER ---
+  async function fetchWithRetry(url: string, options: RequestInit = {}, maxRetries = 3): Promise<Response> {
+    const circuitKey = `${url}`;
+    const breaker = circuitBreakers.get(circuitKey) || { failures: 0, lastFailureTime: 0, isOpen: false };
+    
+    // Check circuit breaker
+    if (breaker.isOpen && Date.now() - breaker.lastFailureTime < CIRCUIT_BREAKER_TIMEOUT) {
+      throw new Error(`Circuit breaker open for ${url}. Too many recent failures.`);
+    } else if (breaker.isOpen && Date.now() - breaker.lastFailureTime >= CIRCUIT_BREAKER_TIMEOUT) {
+      // Reset circuit breaker after timeout
+      breaker.isOpen = false;
+      breaker.failures = 0;
+      circuitBreakers.set(circuitKey, breaker);
+    }
+
+    let lastError: Error | null = null;
+    
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const response = await fetch(url, options);
+        
+        // Handle rate limiting (429)
+        if (response.status === 429) {
+          const retryAfter = parseInt(response.headers.get('Retry-After') || '60');
+          const waitTime = retryAfter * 1000;
+          console.warn(`Rate limited. Waiting ${retryAfter} seconds before retry ${attempt + 1}/${maxRetries}`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+          continue;
+        }
+        
+        // Reset circuit breaker on success
+        if (response.ok) {
+          breaker.failures = 0;
+          breaker.isOpen = false;
+          circuitBreakers.set(circuitKey, breaker);
+          return response;
+        }
+        
+        // Handle server errors (5xx) with retry
+        if (response.status >= 500 && attempt < maxRetries - 1) {
+          const waitTime = Math.pow(2, attempt) * 1000; // Exponential backoff
+          console.warn(`Server error ${response.status}. Retrying in ${waitTime}ms... (Attempt ${attempt + 1}/${maxRetries})`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+          continue;
+        }
+        
+        return response;
+      } catch (error) {
+        lastError = error as Error;
+        const waitTime = Math.pow(2, attempt) * 1000;
+        console.error(`Attempt ${attempt + 1} failed: ${error}. Retrying in ${waitTime}ms...`);
+        
+        if (attempt < maxRetries - 1) {
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
+      }
+    }
+    
+    // All retries failed - update circuit breaker
+    breaker.failures++;
+    breaker.lastFailureTime = Date.now();
+    if (breaker.failures >= CIRCUIT_BREAKER_THRESHOLD) {
+      breaker.isOpen = true;
+      console.error(`Circuit breaker opened for ${url} after ${breaker.failures} failures`);
+    }
+    circuitBreakers.set(circuitKey, breaker);
+    
+    throw lastError || new Error(`Failed after ${maxRetries} retries`);
+  }
+
+  // --- TOKEN REFRESH MECHANISM ---
+  async function refreshAccessToken(account: Account): Promise<boolean> {
+    const clientId = db.prepare("SELECT value FROM settings WHERE key = 'twitchClientId'").get() as {value: string} | undefined;
+    if (!clientId || !account.refreshToken) {
+      console.error(`Cannot refresh token for ${account.username}: missing clientId or refreshToken`);
+      return false;
+    }
+
+    try {
+      console.log(`Refreshing access token for ${account.username}...`);
+      
+      const response = await fetchWithRetry('https://id.twitch.tv/oauth2/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: clientId.value,
+          refresh_token: account.refreshToken,
+          grant_type: 'refresh_token'
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error(`Token refresh failed for ${account.username}:`, errorData);
+        
+        // If refresh token is invalid, set account to idle
+        if (response.status === 400 || response.status === 401) {
+          db.prepare("UPDATE accounts SET status = 'idle' WHERE id = ?").run(account.id);
+          log(`Refresh token invalid for ${account.username}. Farming stopped.`, 'error', account.id);
+          await disconnectChatAccount(account.id);
+        }
+        return false;
+      }
+
+      const data = await response.json();
+      
+      // Update tokens in database
+      db.prepare(`UPDATE accounts SET accessToken = ?, refreshToken = ? WHERE id = ?`)
+        .run(data.access_token, data.refresh_token || account.refreshToken, account.id);
+      
+      log(`Access token refreshed successfully for ${account.username}`, 'success', account.id);
+      return true;
+    } catch (error) {
+      console.error(`Error refreshing token for ${account.username}:`, error);
+      log(`Failed to refresh access token: ${error}`, 'error', account.id);
+      return false;
+    }
+  }
+
+  // Validate settings on startup
+  const validation = validateSettings();
+  if (!validation.valid) {
+    console.warn('Settings validation warnings:', validation.errors);
+  }
+
+  loadBettingStats();
+
+  // --- LOG CLEANUP CRON JOB (Daily at midnight) ---
+  cron.schedule('0 0 * * *', () => {
+    try {
+      console.log('Running daily log cleanup...');
+      
+      // Delete logs older than 30 days
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const deleteOldResult = db.prepare('DELETE FROM logs WHERE time < ?').run(thirtyDaysAgo.toISOString());
+      console.log(`Deleted ${deleteOldResult.changes} log entries older than 30 days`);
+      
+      // Keep only last 10,000 records
+      const totalLogs = db.prepare('SELECT COUNT(*) as count FROM logs').get() as {count: number};
+      if (totalLogs.count > 10000) {
+        const deleteExcessResult = db.prepare(`
+          DELETE FROM logs WHERE id NOT IN (
+            SELECT id FROM logs ORDER BY id DESC LIMIT 10000
+          )
+        `).run();
+        console.log(`Deleted ${deleteExcessResult.changes} excess log entries to maintain 10,000 limit`);
+      }
+      
+      log('Daily log cleanup completed', 'system');
+    } catch (error) {
+      console.error('Error during log cleanup:', error);
+      log(`Log cleanup failed: ${error}`, 'error');
+    }
+  });
 
   function loadBettingStats() {
     const stats = db.prepare('SELECT * FROM betting_stats').all() as any[];
@@ -313,18 +534,6 @@ async function startServer() {
     }
   }
 
-  async function disconnectChatAccount(accountId: number) {
-    const client = activeChatClients.get(accountId);
-    if (client) {
-      try {
-        await client.disconnect();
-        activeChatClients.delete(accountId);
-      } catch (error) {
-        console.error(`Error disconnecting chat:`, error);
-      }
-    }
-  }
-
   async function joinChannelForPoints(accountId: number, streamer: string) {
     const client = activeChatClients.get(accountId);
     if (client) {
@@ -429,7 +638,22 @@ async function startServer() {
     }
   });
 
-  // --- REAL TWITCH HELIX API ENGINE ---
+  // --- CHAT RECONNECTION ON STARTUP ---
+  // Automatically reconnect chat clients for all farming accounts
+  setTimeout(async () => {
+    const farmingAccounts = db.prepare("SELECT * FROM accounts WHERE status = 'farming'").all() as Account[];
+    console.log(`Reconnecting chat clients for ${farmingAccounts.length} farming accounts...`);
+    
+    for (const account of farmingAccounts) {
+      if (!activeChatClients.has(account.id)) {
+        await connectChatAccount(account);
+      }
+    }
+    
+    log(`Reconnected ${activeChatClients.size} chat clients on startup`, 'system');
+  }, 5000); // Wait 5 seconds for server to fully initialize
+
+  // --- REAL TWITCH HELIX API ENGINE WITH TOKEN REFRESH ---
   setInterval(async () => {
     const farmingAccounts = db.prepare("SELECT * FROM accounts WHERE status = 'farming' AND accessToken IS NOT NULL").all() as Account[];
     const row = db.prepare("SELECT value FROM settings WHERE key = 'twitchClientId'").get() as {value: string} | undefined;
@@ -452,23 +676,54 @@ async function startServer() {
           const chunk = streamerIds.slice(i, i + chunkSize);
           const queryParams = chunk.map(id => `user_id=${id}`).join('&');
           
-          const streamsRes = await fetch(`https://api.twitch.tv/helix/streams?${queryParams}`, {
+          const streamsRes = await fetchWithRetry(`https://api.twitch.tv/helix/streams?${queryParams}`, {
             headers: {
               'Authorization': `Bearer ${acc.accessToken}`,
               'Client-Id': clientId
             }
           });
 
-          if (streamsRes.ok) {
+          // Handle 401 - try to refresh token
+          if (streamsRes.status === 401) {
+            console.log(`Access token expired for ${acc.username}. Attempting refresh...`);
+            const refreshSuccess = await refreshAccessToken(acc);
+            
+            if (refreshSuccess) {
+              // Get updated account with new token
+              const updatedAcc = db.prepare('SELECT * FROM accounts WHERE id = ?').get(acc.id) as Account;
+              
+              // Retry the request with new token
+              const retryRes = await fetchWithRetry(`https://api.twitch.tv/helix/streams?${queryParams}`, {
+                headers: {
+                  'Authorization': `Bearer ${updatedAcc.accessToken}`,
+                  'Client-Id': clientId
+                }
+              });
+              
+              if (retryRes.ok) {
+                const streamsData = await retryRes.json();
+                streamsData.data.forEach((stream: any) => {
+                  liveStreamsMap.set(stream.user_id, stream);
+                });
+              } else {
+                // Still failing after refresh - stop farming
+                db.prepare("UPDATE accounts SET status = 'idle' WHERE id = ?").run(acc.id);
+                log(`Token refresh failed. Farming stopped.`, 'error', acc.id);
+                await disconnectChatAccount(acc.id);
+                continue;
+              }
+            } else {
+              // Refresh failed - stop farming
+              db.prepare("UPDATE accounts SET status = 'idle' WHERE id = ?").run(acc.id);
+              log(`Token refresh failed. Farming stopped.`, 'error', acc.id);
+              await disconnectChatAccount(acc.id);
+              continue;
+            }
+          } else if (streamsRes.ok) {
             const streamsData = await streamsRes.json();
             streamsData.data.forEach((stream: any) => {
               liveStreamsMap.set(stream.user_id, stream);
             });
-          } else if (streamsRes.status === 401) {
-            db.prepare("UPDATE accounts SET status = 'idle' WHERE id = ?").run(acc.id);
-            log(`Access token expired. Farming stopped.`, 'system', acc.id);
-            await disconnectChatAccount(acc.id);
-            continue;
           }
         }
 
@@ -512,6 +767,7 @@ async function startServer() {
 
       } catch (error) {
         console.error(`Error processing account ${acc.username}:`, error);
+        log(`Error processing streams: ${error}`, 'error', acc.id);
       }
     }
   }, 30000);
@@ -607,6 +863,13 @@ async function startServer() {
     const stmt = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value');
     if (bettingEnabled !== undefined) stmt.run('bettingEnabled', bettingEnabled.toString());
     if (maxBetPercentage !== undefined) stmt.run('maxBetPercentage', maxBetPercentage.toString());
+    
+    // Validate after update
+    const validation = validateSettings();
+    if (!validation.valid) {
+      return res.status(400).json({ success: false, errors: validation.errors });
+    }
+    
     res.json({ success: true });
   });
 
@@ -628,7 +891,7 @@ async function startServer() {
     if (!clientId) return res.status(400).json({ error: "TWITCH_CLIENT_ID_MISSING" });
 
     try {
-      const response = await fetch('https://id.twitch.tv/oauth2/device', {
+      const response = await fetchWithRetry('https://id.twitch.tv/oauth2/device', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
@@ -651,7 +914,7 @@ async function startServer() {
     if (!clientId || !device_code) return res.status(400).json({ error: "Missing client ID or device code." });
 
     try {
-      const response = await fetch('https://id.twitch.tv/oauth2/token', {
+      const response = await fetchWithRetry('https://id.twitch.tv/oauth2/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({ client_id: clientId, device_code, grant_type: 'urn:ietf:params:oauth:grant-type:device_code' })
@@ -664,7 +927,7 @@ async function startServer() {
       }
       
       if (data.access_token) {
-        const userRes = await fetch('https://api.twitch.tv/helix/users', {
+        const userRes = await fetchWithRetry('https://api.twitch.tv/helix/users', {
           headers: { 'Authorization': `Bearer ${data.access_token}`, 'Client-Id': clientId }
         });
         const userData = await userRes.json();
@@ -683,7 +946,7 @@ async function startServer() {
         const insertFollowed = db.prepare('INSERT INTO followed_channels (account_id, streamer, streamer_id, status, points, bets) VALUES (?, ?, ?, ?, ?, ?)');
         
         do {
-          const followRes = await fetch(`https://api.twitch.tv/helix/channels/followed?user_id=${user.id}&first=100${cursor ? `&after=${cursor}` : ''}`, {
+          const followRes = await fetchWithRetry(`https://api.twitch.tv/helix/channels/followed?user_id=${user.id}&first=100${cursor ? `&after=${cursor}` : ''}`, {
             headers: { 'Authorization': `Bearer ${data.access_token}`, 'Client-Id': clientId }
           });
           
@@ -726,6 +989,13 @@ async function startServer() {
     if (twitchClientId !== undefined) stmt.run('twitchClientId', twitchClientId);
     if (concurrentStreams !== undefined) stmt.run('concurrentStreams', concurrentStreams.toString());
     if (dropAllocation !== undefined) stmt.run('dropAllocation', dropAllocation.toString());
+    
+    // Validate after update
+    const validation = validateSettings();
+    if (!validation.valid) {
+      return res.status(400).json({ success: false, errors: validation.errors });
+    }
+    
     res.json({ success: true });
   });
 
@@ -804,6 +1074,7 @@ async function startServer() {
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
     console.log('Enhanced features loaded: Point Claiming, Betting Engine, 20/80 Allocation');
+    console.log('CRITICAL IMPROVEMENTS: Token Refresh, Retry Logic, Database Indexes, Chat Reconnection, Log Cleanup, Config Validation, Circuit Breaker');
     console.log(`Mode: ${process.env.NODE_ENV || 'development'}`);
   });
 }
