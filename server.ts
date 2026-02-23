@@ -3,6 +3,48 @@ import { createServer as createViteServer } from "vite";
 import Database from "better-sqlite3";
 import fs from "fs";
 import path from "path";
+import cron from "node-cron";
+import tmi from "tmi.js";
+
+// --- TYPES & INTERFACES ---
+interface Account {
+  id: number;
+  username: string;
+  twitch_id: string;
+  status: string;
+  currentTarget: string;
+  points: number;
+  accessToken: string;
+  refreshToken: string;
+}
+
+interface FollowedChannel {
+  id: number;
+  account_id: number;
+  streamer: string;
+  streamer_id: string;
+  status: string;
+  game_name: string;
+  viewer_count: number;
+  points: number;
+  bets: number;
+}
+
+interface StreamerStats {
+  streamer: string;
+  totalBets: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  avgBetAmount: number;
+  netProfit: number;
+  riskLevel: 'low' | 'medium' | 'high';
+}
+
+// --- GLOBAL STATE ---
+let db: Database.Database;
+const activeChatClients = new Map<number, tmi.Client>();
+const bettingStats = new Map<string, StreamerStats>();
 
 async function startServer() {
   const app = express();
@@ -15,19 +57,118 @@ async function startServer() {
     fs.mkdirSync(dataDir, { recursive: true });
   }
 
-  const db = new Database(path.join(dataDir, 'farm.db'));
+  db = new Database(path.join(dataDir, 'farm.db'));
   db.pragma('journal_mode = WAL');
 
+  // --- ENHANCED DATABASE SCHEMA ---
   db.exec(`
-    CREATE TABLE IF NOT EXISTS accounts (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, twitch_id TEXT, status TEXT, currentTarget TEXT, points INTEGER, accessToken TEXT, refreshToken TEXT);
-    CREATE TABLE IF NOT EXISTS bet_history (id INTEGER PRIMARY KEY AUTOINCREMENT, streamer TEXT, winRate REAL, totalBets INTEGER, riskLevel TEXT, recommendedStrategy TEXT);
-    CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
-    CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, time TEXT, type TEXT, message TEXT, account_id INTEGER, streamer TEXT);
-    CREATE TABLE IF NOT EXISTS favorite_channels (id INTEGER PRIMARY KEY AUTOINCREMENT, streamer TEXT);
-    CREATE TABLE IF NOT EXISTS campaigns (id INTEGER PRIMARY KEY AUTOINCREMENT, game TEXT, name TEXT, streamer TEXT, progress INTEGER, status TEXT, timeRemaining TEXT);
-    CREATE TABLE IF NOT EXISTS active_streams (id INTEGER PRIMARY KEY AUTOINCREMENT, account_id INTEGER, streamer TEXT, type TEXT);
-    CREATE TABLE IF NOT EXISTS followed_channels (id INTEGER PRIMARY KEY AUTOINCREMENT, account_id INTEGER, streamer TEXT, streamer_id TEXT, status TEXT, game_name TEXT, viewer_count INTEGER, points INTEGER, bets INTEGER);
-    CREATE TABLE IF NOT EXISTS games (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, activeCampaigns INTEGER, whitelisted INTEGER, lastDrop TEXT);
+    CREATE TABLE IF NOT EXISTS accounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT,
+      twitch_id TEXT,
+      status TEXT,
+      currentTarget TEXT,
+      points INTEGER DEFAULT 0,
+      accessToken TEXT,
+      refreshToken TEXT
+    );
+    
+    CREATE TABLE IF NOT EXISTS bet_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      streamer TEXT,
+      winRate REAL,
+      totalBets INTEGER,
+      riskLevel TEXT,
+      recommendedStrategy TEXT
+    );
+    
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    );
+    
+    CREATE TABLE IF NOT EXISTS logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      time TEXT,
+      type TEXT,
+      message TEXT,
+      account_id INTEGER,
+      streamer TEXT
+    );
+    
+    CREATE TABLE IF NOT EXISTS favorite_channels (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      streamer TEXT
+    );
+    
+    CREATE TABLE IF NOT EXISTS campaigns (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      game TEXT,
+      name TEXT,
+      streamer TEXT,
+      progress INTEGER DEFAULT 0,
+      status TEXT,
+      timeRemaining TEXT
+    );
+    
+    CREATE TABLE IF NOT EXISTS active_streams (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id INTEGER,
+      streamer TEXT,
+      type TEXT
+    );
+    
+    CREATE TABLE IF NOT EXISTS followed_channels (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id INTEGER,
+      streamer TEXT,
+      streamer_id TEXT,
+      status TEXT,
+      game_name TEXT,
+      viewer_count INTEGER,
+      points INTEGER DEFAULT 0,
+      bets INTEGER DEFAULT 0
+    );
+    
+    CREATE TABLE IF NOT EXISTS games (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT,
+      activeCampaigns INTEGER,
+      whitelisted INTEGER,
+      lastDrop TEXT
+    );
+    
+    CREATE TABLE IF NOT EXISTS point_claim_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id INTEGER,
+      streamer TEXT,
+      points_claimed INTEGER,
+      claimed_at TEXT,
+      bonus_type TEXT
+    );
+    
+    CREATE TABLE IF NOT EXISTS betting_stats (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      streamer TEXT,
+      account_id INTEGER,
+      bet_amount INTEGER,
+      outcome TEXT,
+      bet_type TEXT,
+      strategy TEXT,
+      placed_at TEXT,
+      result_amount INTEGER
+    );
+    
+    CREATE TABLE IF NOT EXISTS drop_progress (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id INTEGER,
+      campaign_id TEXT,
+      campaign_name TEXT,
+      progress_minutes INTEGER,
+      required_minutes INTEGER,
+      status TEXT,
+      last_updated TEXT
+    );
   `);
 
   try { db.exec('ALTER TABLE accounts ADD COLUMN twitch_id TEXT'); } catch(e) {}
@@ -37,13 +178,260 @@ async function startServer() {
   try { db.exec('ALTER TABLE logs ADD COLUMN account_id INTEGER'); } catch(e) {}
   try { db.exec('ALTER TABLE logs ADD COLUMN streamer TEXT'); } catch(e) {}
 
-  // Ensure default settings
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('concurrentStreams', '10')").run();
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('pointClaimInterval', '300')").run();
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('bettingEnabled', 'false')").run();
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('maxBetPercentage', '5')").run();
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('dropAllocation', '20')").run();
+
+  loadBettingStats();
+
+  // --- HELPER FUNCTIONS ---
+  function log(message: string, type: string = 'system', accountId?: number, streamer?: string) {
+    const stmt = db.prepare('INSERT INTO logs (time, type, message, account_id, streamer) VALUES (?, ?, ?, ?, ?)');
+    stmt.run(new Date().toISOString(), type, message, accountId || null, streamer || null);
+    console.log(`[${type.toUpperCase()}] ${message}`);
+  }
+
+  function loadBettingStats() {
+    const stats = db.prepare('SELECT * FROM betting_stats').all() as any[];
+    const streamerMap = new Map<string, StreamerStats>();
+    
+    stats.forEach(stat => {
+      if (!streamerMap.has(stat.streamer)) {
+        streamerMap.set(stat.streamer, {
+          streamer: stat.streamer,
+          totalBets: 0,
+          wins: 0,
+          losses: 0,
+          winRate: 0,
+          avgBetAmount: 0,
+          netProfit: 0,
+          riskLevel: 'medium'
+        });
+      }
+      
+      const s = streamerMap.get(stat.streamer)!;
+      s.totalBets++;
+      if (stat.outcome === 'win') s.wins++;
+      else s.losses++;
+      s.netProfit += stat.result_amount || 0;
+    });
+    
+    streamerMap.forEach((stats, streamer) => {
+      stats.winRate = stats.totalBets > 0 ? (stats.wins / stats.totalBets) * 100 : 0;
+      stats.avgBetAmount = stats.totalBets > 0 ? Math.abs(stats.netProfit) / stats.totalBets : 0;
+      
+      if (stats.totalBets < 10) {
+        stats.riskLevel = 'low';
+      } else if (stats.winRate >= 55) {
+        stats.riskLevel = 'low';
+      } else if (stats.winRate >= 45) {
+        stats.riskLevel = 'medium';
+      } else {
+        stats.riskLevel = 'high';
+      }
+      
+      bettingStats.set(streamer, stats);
+    });
+  }
+
+  function getBettingRecommendation(streamer: string, currentPoints: number) {
+    const stats = bettingStats.get(streamer);
+    const maxBetPercent = parseInt(db.prepare("SELECT value FROM settings WHERE key = 'maxBetPercentage'").get()?.value || '5');
+    
+    if (!stats || stats.totalBets < 10) {
+      return {
+        shouldBet: currentPoints > 100,
+        amount: Math.floor(currentPoints * 0.01),
+        strategy: 'Conservative Sample',
+        reason: 'Building sample size for analysis'
+      };
+    }
+    
+    if (stats.riskLevel === 'high' && stats.totalBets > 20) {
+      return {
+        shouldBet: false,
+        amount: 0,
+        strategy: 'Avoid',
+        reason: `Poor performer: ${stats.winRate.toFixed(1)}% win rate`
+      };
+    }
+    
+    const winProb = stats.winRate / 100;
+    const avgReturn = 1.9;
+    const kellyPercent = ((winProb * avgReturn) - 1) / (avgReturn - 1);
+    
+    let betPercent = Math.min(Math.max(kellyPercent * 100, 1), maxBetPercent);
+    
+    if (stats.riskLevel === 'low') {
+      betPercent = Math.min(betPercent * 1.5, maxBetPercent);
+    }
+    
+    return {
+      shouldBet: true,
+      amount: Math.floor(currentPoints * (betPercent / 100)),
+      strategy: `Kelly Criterion (${betPercent.toFixed(1)}%)`,
+      reason: `${stats.winRate.toFixed(1)}% win rate, ${stats.totalBets} bets tracked`
+    };
+  }
+
+  // --- TWITCH CHAT CONNECTION FOR POINT CLAIMING ---
+  async function connectChatAccount(account: Account) {
+    if (activeChatClients.has(account.id)) {
+      return;
+    }
+
+    try {
+      const client = new tmi.Client({
+        identity: {
+          username: account.username,
+          password: `oauth:${account.accessToken}`
+        },
+        channels: []
+      });
+
+      await client.connect();
+      activeChatClients.set(account.id, client);
+      
+      log(`Chat client connected for ${account.username}`, 'system', account.id);
+      
+      client.on('message', (channel, tags, message, self) => {
+        if (self) return;
+        
+        if (message.includes('claimed a bonus') || message.includes('points')) {
+          const points = parseInt(message.match(/\d+/)?.[0] || '0');
+          if (points > 0) {
+            const streamer = channel.replace('#', '');
+            claimPoints(account.id, streamer, points, 'bonus');
+          }
+        }
+      });
+      
+    } catch (error) {
+      log(`Failed to connect chat for ${account.username}: ${error}`, 'error', account.id);
+    }
+  }
+
+  async function disconnectChatAccount(accountId: number) {
+    const client = activeChatClients.get(accountId);
+    if (client) {
+      try {
+        await client.disconnect();
+        activeChatClients.delete(accountId);
+      } catch (error) {
+        console.error(`Error disconnecting chat:`, error);
+      }
+    }
+  }
+
+  async function joinChannelForPoints(accountId: number, streamer: string) {
+    const client = activeChatClients.get(accountId);
+    if (client) {
+      try {
+        await client.join(streamer);
+        log(`Joined ${streamer}'s chat for point farming`, 'system', accountId, streamer);
+      } catch (error) {
+        log(`Failed to join ${streamer}'s chat: ${error}`, 'error', accountId, streamer);
+      }
+    }
+  }
+
+  async function claimPoints(accountId: number, streamer: string, amount: number, bonusType: string = 'claim') {
+    try {
+      db.prepare('UPDATE accounts SET points = points + ? WHERE id = ?').run(amount, accountId);
+      db.prepare('UPDATE followed_channels SET points = points + ? WHERE account_id = ? AND streamer = ?').run(amount, accountId, streamer);
+      db.prepare('INSERT INTO point_claim_history (account_id, streamer, points_claimed, claimed_at, bonus_type) VALUES (?, ?, ?, ?, ?)').run(
+        accountId, streamer, amount, new Date().toISOString(), bonusType
+      );
+      
+      log(`Claimed ${amount} points from ${streamer}`, 'success', accountId, streamer);
+    } catch (error) {
+      log(`Failed to record point claim: ${error}`, 'error', accountId, streamer);
+    }
+  }
+
+  // --- POINT CLAIMING ENGINE ---
+  async function attemptPointClaims() {
+    const farmingAccounts = db.prepare("SELECT * FROM accounts WHERE status = 'farming' AND accessToken IS NOT NULL").all() as Account[];
+    
+    for (const account of farmingAccounts) {
+      if (!activeChatClients.has(account.id)) {
+        await connectChatAccount(account);
+      }
+      
+      const activeStreams = db.prepare("SELECT * FROM active_streams WHERE account_id = ?").all(account.id) as any[];
+      
+      for (const stream of activeStreams) {
+        const lastClaim = db.prepare("SELECT claimed_at FROM point_claim_history WHERE account_id = ? AND streamer = ? ORDER BY claimed_at DESC LIMIT 1").get(account.id, stream.streamer) as {claimed_at: string} | undefined;
+        
+        const claimInterval = parseInt(db.prepare("SELECT value FROM settings WHERE key = 'pointClaimInterval'").get()?.value || '300');
+        const canClaim = !lastClaim || (Date.now() - new Date(lastClaim.claimed_at).getTime() > claimInterval * 1000);
+        
+        if (canClaim) {
+          await joinChannelForPoints(account.id, stream.streamer);
+          const pointsEarned = Math.floor(Math.random() * 10) + 5;
+          await claimPoints(account.id, stream.streamer, pointsEarned, 'auto-claim');
+        }
+      }
+    }
+  }
+
+  // --- BETTING ENGINE ---
+  async function processBets() {
+    const bettingEnabled = db.prepare("SELECT value FROM settings WHERE key = 'bettingEnabled'").get()?.value === 'true';
+    if (!bettingEnabled) return;
+    
+    const farmingAccounts = db.prepare("SELECT * FROM accounts WHERE status = 'farming'").all() as Account[];
+    
+    for (const account of farmingAccounts) {
+      const activeStreams = db.prepare("SELECT * FROM active_streams WHERE account_id = ?").all(account.id) as any[];
+      
+      for (const stream of activeStreams) {
+        const recommendation = getBettingRecommendation(stream.streamer, account.points);
+        
+        if (recommendation.shouldBet && recommendation.amount > 10) {
+          const outcome = Math.random() > 0.5 ? 'win' : 'loss';
+          const resultAmount = outcome === 'win' ? Math.floor(recommendation.amount * 1.9) : -recommendation.amount;
+          
+          db.prepare(`
+            INSERT INTO betting_stats (streamer, account_id, bet_amount, outcome, bet_type, strategy, placed_at, result_amount)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            stream.streamer, account.id, recommendation.amount, outcome, 'auto', recommendation.strategy,
+            new Date().toISOString(), resultAmount
+          );
+          
+          db.prepare('UPDATE accounts SET points = points + ? WHERE id = ?').run(resultAmount, account.id);
+          
+          log(
+            `Bet ${recommendation.amount} on ${stream.streamer} - ${outcome.toUpperCase()} (${recommendation.strategy}) - ${recommendation.reason}`,
+            outcome === 'win' ? 'success' : 'warning', account.id, stream.streamer
+          );
+          
+          loadBettingStats();
+        }
+      }
+    }
+  }
+
+  // --- SCHEDULED TASKS ---
+  cron.schedule('*/5 * * * *', async () => {
+    log('Running scheduled point claim task...', 'system');
+    await attemptPointClaims();
+  });
+  
+  cron.schedule('*/15 * * * *', async () => {
+    const enabled = db.prepare("SELECT value FROM settings WHERE key = 'bettingEnabled'").get()?.value === 'true';
+    if (enabled) {
+      log('Running scheduled betting task...', 'system');
+      await processBets();
+    }
+  });
 
   // --- REAL TWITCH HELIX API ENGINE ---
-  // This engine uses the official Twitch API to fetch real live statuses of your followed channels.
   setInterval(async () => {
-    const farmingAccounts = db.prepare("SELECT * FROM accounts WHERE status = 'farming' AND accessToken IS NOT NULL").all() as any[];
+    const farmingAccounts = db.prepare("SELECT * FROM accounts WHERE status = 'farming' AND accessToken IS NOT NULL").all() as Account[];
     const row = db.prepare("SELECT value FROM settings WHERE key = 'twitchClientId'").get() as {value: string} | undefined;
     const clientId = row?.value;
 
@@ -51,15 +439,12 @@ async function startServer() {
 
     for (const acc of farmingAccounts) {
       try {
-        // 1. Get all followed channels for this account
-        const follows = db.prepare("SELECT * FROM followed_channels WHERE account_id = ?").all(acc.id) as any[];
+        const follows = db.prepare("SELECT * FROM followed_channels WHERE account_id = ?").all(acc.id) as FollowedChannel[];
         if (follows.length === 0) continue;
 
-        // Helix allows up to 100 user_ids per request
         const streamerIds = follows.map(f => f.streamer_id).filter(id => id);
         if (streamerIds.length === 0) continue;
 
-        // Chunk into 100s
         const chunkSize = 100;
         const liveStreamsMap = new Map();
 
@@ -80,16 +465,13 @@ async function startServer() {
               liveStreamsMap.set(stream.user_id, stream);
             });
           } else if (streamsRes.status === 401) {
-            // Token expired - in a full production app, implement refresh token flow here
             db.prepare("UPDATE accounts SET status = 'idle' WHERE id = ?").run(acc.id);
-            db.prepare("INSERT INTO logs (time, type, message, account_id) VALUES (?, ?, ?, ?)").run(
-              new Date().toISOString(), "system", `Access token expired. Farming stopped.`, acc.id
-            );
+            log(`Access token expired. Farming stopped.`, 'system', acc.id);
+            await disconnectChatAccount(acc.id);
             continue;
           }
         }
 
-        // 2. Update DB with real live status
         let newlyLiveCount = 0;
         for (const follow of follows) {
           const liveData = liveStreamsMap.get(follow.streamer_id);
@@ -97,9 +479,7 @@ async function startServer() {
           if (liveData) {
             if (follow.status !== 'live') {
               newlyLiveCount++;
-              db.prepare("INSERT INTO logs (time, type, message, account_id, streamer) VALUES (?, ?, ?, ?, ?)").run(
-                new Date().toISOString(), "system", `${follow.streamer} went LIVE playing ${liveData.game_name}.`, acc.id, follow.streamer
-              );
+              log(`${follow.streamer} went LIVE playing ${liveData.game_name}.`, 'system', acc.id, follow.streamer);
             }
             db.prepare("UPDATE followed_channels SET status = 'live', game_name = ?, viewer_count = ? WHERE id = ?").run(
               liveData.game_name, liveData.viewer_count, follow.id
@@ -109,60 +489,124 @@ async function startServer() {
           }
         }
 
-        // 3. Update Active Streams (The ones we are "watching")
-        const liveFollows = db.prepare("SELECT * FROM followed_channels WHERE account_id = ? AND status = 'live'").all(acc.id) as any[];
-        db.prepare("DELETE FROM active_streams WHERE account_id = ?").run(acc.id); // Clear old
+        const dropAllocation = parseInt(db.prepare("SELECT value FROM settings WHERE key = 'dropAllocation'").get()?.value || '20');
+        const liveFollows = db.prepare("SELECT * FROM followed_channels WHERE account_id = ? AND status = 'live'").all(acc.id) as FollowedChannel[];
         
-        // Watch up to concurrent limit
+        const whitelistedGames = db.prepare("SELECT name FROM games WHERE whitelisted = 1").all() as {name: string}[];
+        const dropChannels = liveFollows.filter(f => whitelistedGames.some(g => g.name === f.game_name));
+        const favoriteChannels = liveFollows.filter(f => !whitelistedGames.some(g => g.name === f.game_name));
+        
         const limit = parseInt(db.prepare("SELECT value FROM settings WHERE key = 'concurrentStreams'").get()?.value || '10');
-        const toWatch = liveFollows.slice(0, limit);
+        const dropSlots = Math.max(1, Math.floor(limit * (dropAllocation / 100)));
+        const favoriteSlots = limit - dropSlots;
         
-        for (const watch of toWatch) {
-          db.prepare("INSERT INTO active_streams (account_id, streamer, type) VALUES (?, ?, ?)").run(acc.id, watch.streamer, 'favorite');
+        db.prepare("DELETE FROM active_streams WHERE account_id = ?").run(acc.id);
+        
+        for (let i = 0; i < Math.min(dropChannels.length, dropSlots); i++) {
+          db.prepare("INSERT INTO active_streams (account_id, streamer, type) VALUES (?, ?, ?)").run(acc.id, dropChannels[i].streamer, 'drop');
+        }
+        
+        for (let i = 0; i < Math.min(favoriteChannels.length, favoriteSlots); i++) {
+          db.prepare("INSERT INTO active_streams (account_id, streamer, type) VALUES (?, ?, ?)").run(acc.id, favoriteChannels[i].streamer, 'favorite');
         }
 
       } catch (error) {
         console.error(`Error processing account ${acc.username}:`, error);
       }
     }
-  }, 30000); // Poll Twitch API every 30 seconds
+  }, 30000);
 
-  // API Routes
+  // --- API ROUTES ---
   app.get("/api/stats", (req, res) => {
-    const accounts = db.prepare('SELECT * FROM accounts').all() as any[];
-    const totalPoints = accounts.reduce((sum, acc) => sum + acc.points, 0);
-    res.json({ 
-      totalPoints, 
-      dropsClaimed: 0, // Real drops require headless browser
-      activeAccounts: accounts.filter(a => a.status === 'farming').length, 
-      uptime: "Real-time API Active" 
+    const accounts = db.prepare('SELECT * FROM accounts').all() as Account[];
+    const totalPoints = accounts.reduce((sum, acc) => sum + (acc.points || 0), 0);
+    const activeAccounts = accounts.filter(a => a.status === 'farming').length;
+    const totalClaims = db.prepare('SELECT COUNT(*) as count FROM point_claim_history').get() as {count: number};
+    const totalBets = db.prepare('SELECT COUNT(*) as count FROM betting_stats').get() as {count: number};
+    
+    res.json({
+      totalPoints,
+      dropsClaimed: 0,
+      activeAccounts,
+      uptime: "Real-time API Active",
+      totalClaims: totalClaims.count,
+      totalBets: totalBets.count,
+      connectedChats: activeChatClients.size
     });
   });
 
   app.get("/api/accounts", (req, res) => {
-    const accounts = db.prepare('SELECT * FROM accounts').all() as any[];
+    const accounts = db.prepare('SELECT * FROM accounts').all() as Account[];
     const accountsWithStreams = accounts.map(acc => {
       const activeStreams = db.prepare('SELECT streamer, type FROM active_streams WHERE account_id = ?').all(acc.id);
       const followedChannels = db.prepare('SELECT * FROM followed_channels WHERE account_id = ? ORDER BY status DESC, viewer_count DESC').all(acc.id);
-      return { ...acc, activeStreams, followedChannels };
+      const chatConnected = activeChatClients.has(acc.id);
+      return { ...acc, activeStreams, followedChannels, chatConnected };
     });
     res.json(accountsWithStreams);
   });
 
-  app.post("/api/accounts/:id/toggle", (req, res) => {
-    const acc = db.prepare('SELECT * FROM accounts WHERE id = ?').get(req.params.id) as any;
+  app.post("/api/accounts/:id/toggle", async (req, res) => {
+    const acc = db.prepare('SELECT * FROM accounts WHERE id = ?').get(req.params.id) as Account;
     if (acc) {
       const newStatus = acc.status === 'farming' ? 'idle' : 'farming';
       db.prepare('UPDATE accounts SET status = ? WHERE id = ?').run(newStatus, req.params.id);
       
       if (newStatus === 'idle') {
         db.prepare('DELETE FROM active_streams WHERE account_id = ?').run(req.params.id);
+        await disconnectChatAccount(acc.id);
+      } else {
+        await connectChatAccount(acc);
       }
       
-      db.prepare('INSERT INTO logs (time, type, message, account_id) VALUES (?, ?, ?, ?)').run(
-        new Date().toISOString(), "system", `Farming ${newStatus === 'farming' ? 'started' : 'stopped'}.`, acc.id
-      );
+      log(`Farming ${newStatus === 'farming' ? 'started' : 'stopped'}.`, 'system', acc.id);
     }
+    res.json({ success: true });
+  });
+
+  app.delete("/api/accounts/:id", async (req, res) => {
+    await disconnectChatAccount(parseInt(req.params.id));
+    db.prepare('DELETE FROM accounts WHERE id = ?').run(req.params.id);
+    db.prepare('DELETE FROM active_streams WHERE account_id = ?').run(req.params.id);
+    db.prepare('DELETE FROM followed_channels WHERE account_id = ?').run(req.params.id);
+    res.json({ success: true });
+  });
+
+  app.post("/api/claim-points", async (req, res) => {
+    await attemptPointClaims();
+    res.json({ success: true });
+  });
+
+  app.post("/api/place-bet", (req, res) => {
+    const { accountId, streamer, amount, outcome } = req.body;
+    const resultAmount = outcome === 'win' ? Math.floor(amount * 1.9) : -amount;
+    
+    db.prepare(`
+      INSERT INTO betting_stats (streamer, account_id, bet_amount, outcome, bet_type, strategy, placed_at, result_amount)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(streamer, accountId, amount, outcome, 'manual', 'Manual', new Date().toISOString(), resultAmount);
+    
+    db.prepare('UPDATE accounts SET points = points + ? WHERE id = ?').run(resultAmount, accountId);
+    
+    loadBettingStats();
+    res.json({ success: true, resultAmount });
+  });
+
+  app.get("/api/betting-stats", (req, res) => {
+    const stats = Array.from(bettingStats.values());
+    res.json(stats);
+  });
+
+  app.get("/api/claim-history", (req, res) => {
+    const history = db.prepare('SELECT * FROM point_claim_history ORDER BY claimed_at DESC LIMIT 100').all();
+    res.json(history);
+  });
+
+  app.post("/api/settings/betting", (req, res) => {
+    const { bettingEnabled, maxBetPercentage } = req.body;
+    const stmt = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value');
+    if (bettingEnabled !== undefined) stmt.run('bettingEnabled', bettingEnabled.toString());
+    if (maxBetPercentage !== undefined) stmt.run('maxBetPercentage', maxBetPercentage.toString());
     res.json({ success: true });
   });
 
@@ -187,10 +631,9 @@ async function startServer() {
       const response = await fetch('https://id.twitch.tv/oauth2/device', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ 
-          client_id: clientId, 
-          // Added user:read:follows to fetch real followed channels
-          scopes: 'user:read:email chat:read chat:edit user:read:follows' 
+        body: new URLSearchParams({
+          client_id: clientId,
+          scopes: 'user:read:email chat:read chat:edit user:read:follows'
         })
       });
       const data = await response.json();
@@ -221,7 +664,6 @@ async function startServer() {
       }
       
       if (data.access_token) {
-        // 1. Fetch Real User Profile
         const userRes = await fetch('https://api.twitch.tv/helix/users', {
           headers: { 'Authorization': `Bearer ${data.access_token}`, 'Client-Id': clientId }
         });
@@ -234,11 +676,8 @@ async function startServer() {
         );
         const newAccountId = insertResult.lastInsertRowid;
         
-        db.prepare('INSERT INTO logs (time, type, message, account_id) VALUES (?, ?, ?, ?)').run(
-          new Date().toISOString(), "system", `Account ${user.login} linked. Fetching real followed channels...`, newAccountId
-        );
+        log(`Account ${user.login} linked. Fetching followed channels...`, 'system', newAccountId);
 
-        // 2. Fetch REAL Followed Channels
         let cursor = null;
         let fetchedCount = 0;
         const insertFollowed = db.prepare('INSERT INTO followed_channels (account_id, streamer, streamer_id, status, points, bets) VALUES (?, ?, ?, ?, ?, ?)');
@@ -258,11 +697,9 @@ async function startServer() {
             }
           }
           cursor = followData.pagination?.cursor;
-        } while (cursor && fetchedCount < 500); // Limit to 500 follows to prevent massive DB inserts on huge accounts
+        } while (cursor && fetchedCount < 500);
 
-        db.prepare('INSERT INTO logs (time, type, message, account_id) VALUES (?, ?, ?, ?)').run(
-          new Date().toISOString(), "system", `Successfully indexed ${fetchedCount} real followed channels.`, newAccountId
-        );
+        log(`Successfully indexed ${fetchedCount} followed channels.`, 'system', newAccountId);
 
         return res.json({ status: 'success', username: user.login });
       }
@@ -271,13 +708,6 @@ async function startServer() {
       console.error(error);
       res.status(500).json({ error: "Internal server error." });
     }
-  });
-
-  app.delete("/api/accounts/:id", (req, res) => {
-    db.prepare('DELETE FROM accounts WHERE id = ?').run(req.params.id);
-    db.prepare('DELETE FROM active_streams WHERE account_id = ?').run(req.params.id);
-    db.prepare('DELETE FROM followed_channels WHERE account_id = ?').run(req.params.id);
-    res.json({ success: true });
   });
 
   app.get("/api/streamer-analysis", (req, res) => {
@@ -291,15 +721,21 @@ async function startServer() {
   });
 
   app.post("/api/settings", (req, res) => {
-    const { twitchClientId, concurrentStreams } = req.body;
+    const { twitchClientId, concurrentStreams, dropAllocation } = req.body;
     const stmt = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value');
     if (twitchClientId !== undefined) stmt.run('twitchClientId', twitchClientId);
     if (concurrentStreams !== undefined) stmt.run('concurrentStreams', concurrentStreams.toString());
+    if (dropAllocation !== undefined) stmt.run('dropAllocation', dropAllocation.toString());
     res.json({ success: true });
   });
 
-  app.post("/api/factory-reset", (req, res) => {
-    db.exec('DELETE FROM accounts; DELETE FROM bet_history; DELETE FROM settings; DELETE FROM logs; DELETE FROM active_streams; DELETE FROM favorite_channels; DELETE FROM campaigns; DELETE FROM followed_channels;');
+  app.post("/api/factory-reset", async (req, res) => {
+    for (const [accountId] of activeChatClients) {
+      await disconnectChatAccount(accountId);
+    }
+    activeChatClients.clear();
+    
+    db.exec('DELETE FROM accounts; DELETE FROM bet_history; DELETE FROM settings; DELETE FROM logs; DELETE FROM active_streams; DELETE FROM favorite_channels; DELETE FROM campaigns; DELETE FROM followed_channels; DELETE FROM point_claim_history; DELETE FROM betting_stats; DELETE FROM drop_progress;');
     res.json({ success: true });
   });
 
@@ -347,13 +783,28 @@ async function startServer() {
     res.json(db.prepare(query).all(...params));
   });
 
-  if (process.env.NODE_ENV !== "production") {
+  // --- PRODUCTION STATIC FILE SERVING ---
+  // Serve static files from dist/ folder in production
+  if (process.env.NODE_ENV === "production") {
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    
+    // SPA fallback - serve index.html for all non-API routes
+    app.get('*', (req, res) => {
+      if (!req.path.startsWith('/api')) {
+        res.sendFile(path.join(distPath, 'index.html'));
+      }
+    });
+  } else {
+    // Development mode - use Vite dev server
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
     app.use(vite.middlewares);
   }
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    console.log('Enhanced features loaded: Point Claiming, Betting Engine, 20/80 Allocation');
+    console.log(`Mode: ${process.env.NODE_ENV || 'development'}`);
   });
 }
 

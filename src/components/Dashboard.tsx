@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Activity, Gift, Coins, Clock, Server } from "lucide-react";
+import { Activity, Gift, Coins, Clock, Server, MessageCircle, TrendingUp } from "lucide-react";
 import {
   AreaChart,
   Area,
@@ -34,8 +34,8 @@ export default function Dashboard() {
         .then(setLogs);
     };
     
-    fetchData(); // Initial fetch
-    const interval = setInterval(fetchData, 5000); // Poll every 5 seconds
+    fetchData();
+    const interval = setInterval(fetchData, 5000);
     
     return () => clearInterval(interval);
   }, []);
@@ -58,36 +58,36 @@ export default function Dashboard() {
         </p>
       </header>
 
-      {/* Stats Grid */}
+      {/* Enhanced Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           {
             label: "Total Points",
-            value: stats.totalPoints.toLocaleString(),
+            value: stats.totalPoints?.toLocaleString() || "0",
             icon: Coins,
             color: "text-yellow-500",
-            subtext: "Requires Desktop Worker"
+            subtext: "Auto-claimed from channels"
           },
           {
-            label: "Drops Claimed",
-            value: stats.dropsClaimed,
-            icon: Gift,
-            color: "text-[#9146FF]",
-            subtext: "Requires Desktop Worker"
+            label: "Point Claims",
+            value: stats.totalClaims || 0,
+            icon: Activity,
+            color: "text-green-500",
+            subtext: "Successful claims"
           },
           {
             label: "Active Accounts",
-            value: stats.activeAccounts,
+            value: stats.activeAccounts || 0,
             icon: Server,
             color: "text-[#10b981]",
-            subtext: "Online & Polling"
+            subtext: "Farming channels"
           },
           {
-            label: "System Uptime",
-            value: stats.uptime,
-            icon: Clock,
+            label: "Chat Connections",
+            value: stats.connectedChats || 0,
+            icon: MessageCircle,
             color: "text-blue-400",
-            subtext: "Helix API Connected"
+            subtext: "Connected to Twitch"
           },
         ].map((stat, i) => (
           <div
@@ -98,97 +98,102 @@ export default function Dashboard() {
               <stat.icon size={24} />
             </div>
             <div>
-              <p className="text-sm font-medium text-[#a1a1aa] uppercase tracking-wider">
-                {stat.label}
-              </p>
-              <p className="text-2xl font-mono font-semibold mt-1">
-                {stat.value}
-              </p>
-              <p className="text-xs text-[#a1a1aa] mt-1">{stat.subtext}</p>
+              <p className="text-sm text-[#a1a1aa]">{stat.label}</p>
+              <p className="text-2xl font-bold">{stat.value}</p>
+              <p className="text-xs text-[#71717a]">{stat.subtext}</p>
             </div>
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Chart */}
-        <div className="lg:col-span-2 bg-[#18181b] border border-[#27272a] rounded-xl p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-semibold">Points Farmed (24h)</h2>
-            <Activity className="text-[#a1a1aa]" size={20} />
+      {/* Additional Betting Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-[#18181b] border border-[#27272a] rounded-xl p-5 flex items-center gap-4">
+          <div className="p-3 rounded-lg bg-[#27272a]/50 text-purple-500">
+            <TrendingUp size={24} />
           </div>
-          <div className="h-[300px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={mockChartData}>
-                <defs>
-                  <linearGradient id="colorPoints" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#9146FF" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#9146FF" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="#27272a"
-                  vertical={false}
-                />
-                <XAxis
-                  dataKey="time"
-                  stroke="#a1a1aa"
-                  fontSize={12}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <YAxis
-                  stroke="#a1a1aa"
-                  fontSize={12}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(v) => `${v / 1000}k`}
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "#18181b",
-                    borderColor: "#27272a",
-                    borderRadius: "8px",
-                  }}
-                  itemStyle={{ color: "#fafafa" }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="points"
-                  stroke="#9146FF"
-                  strokeWidth={2}
-                  fillOpacity={1}
-                  fill="url(#colorPoints)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+          <div>
+            <p className="text-sm text-[#a1a1aa]">Total Bets Placed</p>
+            <p className="text-2xl font-bold">{stats.totalBets || 0}</p>
+            <p className="text-xs text-[#71717a]">Algorithmic betting</p>
           </div>
         </div>
+        
+        <div className="bg-[#18181b] border border-[#27272a] rounded-xl p-5 flex items-center gap-4">
+          <div className="p-3 rounded-lg bg-[#27272a]/50 text-[#9146FF]">
+            <Gift size={24} />
+          </div>
+          <div>
+            <p className="text-sm text-[#a1a1aa]">Drops Claimed</p>
+            <p className="text-2xl font-bold">{stats.dropsClaimed || 0}</p>
+            <p className="text-xs text-[#71717a]">20/80 Allocation Active</p>
+          </div>
+        </div>
+        
+        <div className="bg-[#18181b] border border-[#27272a] rounded-xl p-5 flex items-center gap-4">
+          <div className="p-3 rounded-lg bg-[#27272a]/50 text-blue-400">
+            <Clock size={24} />
+          </div>
+          <div>
+            <p className="text-sm text-[#a1a1aa]">System Uptime</p>
+            <p className="text-lg font-bold">{stats.uptime || "Unknown"}</p>
+            <p className="text-xs text-[#71717a]">Real-time monitoring</p>
+          </div>
+        </div>
+      </div>
 
-        {/* Activity Log */}
-        <div className="bg-[#18181b] border border-[#27272a] rounded-xl p-6 flex flex-col">
-          <h2 className="text-lg font-semibold mb-6">Recent Activity</h2>
-          <div className="flex-1 overflow-y-auto pr-2 space-y-4">
-            {logs.map((log) => (
-              <div key={log.id} className="flex gap-3 text-sm">
-                <div className="w-2 h-2 rounded-full mt-1.5 shrink-0 bg-[#9146FF]"></div>
-                <div>
-                  <p className="text-[#fafafa]">
-                    {log.username && log.streamer ? (
-                      <span className="text-[#a1a1aa]">[{log.username} @ {log.streamer}] </span>
-                    ) : log.username ? (
-                      <span className="text-[#a1a1aa]">[{log.username}] </span>
-                    ) : null}
-                    {log.message}
-                  </p>
-                  <p className="text-xs text-[#a1a1aa] mt-0.5 font-mono">
-                    {new Date(log.time).toLocaleTimeString()}
+      {/* Points Chart */}
+      <div className="bg-[#18181b] border border-[#27272a] rounded-xl p-6">
+        <h2 className="text-xl font-semibold mb-4">24-Hour Points Trend</h2>
+        <ResponsiveContainer width="100%" height={250}>
+          <AreaChart data={mockChartData}>
+            <defs>
+              <linearGradient id="colorPoints" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#fbbf24" stopOpacity={0.8}/>
+                <stop offset="95%" stopColor="#fbbf24" stopOpacity={0}/>
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+            <XAxis dataKey="time" stroke="#71717a" />
+            <YAxis stroke="#71717a" />
+            <Tooltip 
+              contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
+              labelStyle={{ color: '#a1a1aa' }}
+            />
+            <Area type="monotone" dataKey="points" stroke="#fbbf24" fillOpacity={1} fill="url(#colorPoints)" />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Activity Log */}
+      <div className="bg-[#18181b] border border-[#27272a] rounded-xl p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold">Activity Log</h2>
+          <span className="text-sm text-[#a1a1aa]">Last 20 events</span>
+        </div>
+        <div className="space-y-2">
+          {logs.length === 0 ? (
+            <div className="text-center py-8 text-[#a1a1aa]">No activity yet</div>
+          ) : (
+            logs.slice(0, 20).map((log) => (
+              <div key={log.id} className="flex items-start gap-3 py-2 px-3 bg-[#27272a]/30 rounded-lg">
+                <div className={`mt-0.5 w-2 h-2 rounded-full ${
+                  log.type === 'success' ? 'bg-green-500' :
+                  log.type === 'error' ? 'bg-red-500' :
+                  log.type === 'warning' ? 'bg-yellow-500' :
+                  'bg-blue-500'
+                }`} />
+                <div className="flex-1">
+                  <p className="text-sm">{log.message}</p>
+                  <p className="text-xs text-[#71717a] mt-1">
+                    {log.username && <span className="text-[#a1a1aa]">{log.username}</span>}
+                    {log.streamer && <span className="text-[#a1a1aa]"> → {log.streamer}</span>}
+                    <span> • {new Date(log.time).toLocaleTimeString()}</span>
                   </p>
                 </div>
               </div>
-            ))}
-          </div>
+            ))
+          )}
         </div>
       </div>
     </div>

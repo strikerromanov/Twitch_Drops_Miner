@@ -1,7 +1,8 @@
 {
-  "name": "react-example",
+  "name": "twitch-drops-miner",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "Twitch Drops and Points Farming Bot with Algorithmic Betting",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -9,11 +10,18 @@
     "start": "node server.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "docker:build": "docker-compose build",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f",
+    "docker:restart": "docker-compose restart",
+    "docker:shell": "docker-compose exec twitch-drops-miner sh"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
     "@tailwindcss/vite": "^4.1.14",
+    "@types/node-cron": "^3.0.11",
     "@vitejs/plugin-react": "^5.0.4",
     "better-sqlite3": "^12.4.1",
     "clsx": "^2.1.1",
@@ -22,10 +30,12 @@
     "express": "^4.21.2",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "node-cron": "^4.2.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "recharts": "^3.7.0",
     "tailwind-merge": "^3.5.0",
+    "tmi.js": "^1.8.5",
     "vite": "^6.2.0"
   },
   "devDependencies": {
@@ -34,7 +44,6 @@
     "autoprefixer": "^10.4.21",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "typescript": "~5.8.2"
   }
 }
