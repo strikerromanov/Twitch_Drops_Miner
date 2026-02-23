@@ -38,12 +38,10 @@ export class PointClaimingService {
     }
 
     try {
-      // Create context for this account
       const context = await this.browser.newContext({
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
       });
       
-      // Set authentication cookie
       await context.addCookies([{
         name: 'auth-token',
         value: accessToken,
@@ -54,7 +52,6 @@ export class PointClaimingService {
       const page = await context.newPage();
       this.contexts.set(accountId, { context, page });
       
-      // Start watching streams and claiming
       await this.watchAndClaim(accountId);
       
     } catch (error: any) {
@@ -65,52 +62,22 @@ export class PointClaimingService {
   async watchAndClaim(accountId: number): Promise<void> {
     const accountData = this.contexts.get(accountId);
     if (!accountData) return;
-  const channels = this.db.prepare(`
-    SELECT streamer FROM followed_channels
-    WHERE account_id = ? AND status = "farming"
-    ORDER BY points ASC
-  `).all(accountId);
-  ).all(accountId);
-  const channels = this.db.prepare(`
-    SELECT streamer FROM followed_channels
-    WHERE account_id = ? AND status = 'farming'
-    ORDER BY points ASC
-  ).all(accountId);
-  const channels = this.db.prepare(`
-    SELECT streamer FROM followed_channels
-    WHERE account_id = ? AND status = 'farming'
-    ORDER BY points ASC
-  ).all(accountId);
-  const channels = this.db.prepare(`
-    SELECT streamer FROM followed_channels
-    WHERE account_id = ? AND status = 'farming'
-    ORDER BY points ASC
-  ).all(accountId);
-      SELECT streamer FROM followed_channels 
-      WHERE account_id = ? AND status = "farming"
-      ORDER BY points ASC
-    ').all(accountId);
     
-    for (const channel of channels.slice(0, 5)) { // Watch up to 5 channels
+    const { page } = accountData;
+    
+    const query = `SELECT streamer FROM followed_channels WHERE account_id = ? AND status = 'farming' ORDER BY points ASC`;
+    const channels = this.db.prepare(query).all(accountId);
+    
+    for (const channel of channels.slice(0, 5)) {
       try {
         console.log(`Watching ${channel.streamer} for points...`);
         await page.goto(`https://www.twitch.tv/${channel.streamer}`, { waitUntil: 'networkidle' });
-        await page.waitForTimeout(60000); // Watch for 1 minute
+        await page.waitForTimeout(60000);
         
-        // Try to claim points
         const claimed = await this.tryClaimPoints(page, channel.streamer);
         if (claimed > 0) {
-          // Update database
-          this.db.prepare('
-            UPDATE followed_channels 
-            SET points = points + ? 
-            WHERE account_id = ? AND streamer = ?
-          ').run(claimed, accountId, channel.streamer);
-          
-          this.db.prepare('
-            INSERT INTO point_claim_history (account_id, streamer, points_claimed, claimed_at)
-            VALUES (?, ?, ?, datetime("now"))
-          ').run(accountId, channel.streamer, claimed);
+          this.db.prepare('UPDATE followed_channels SET points = points + ? WHERE account_id = ? AND streamer = ?').run(claimed, accountId, channel.streamer);
+          this.db.prepare('INSERT INTO point_claim_history (account_id, streamer, points_claimed, claimed_at) VALUES (?, ?, ?, datetime("now"))').run(accountId, channel.streamer, claimed);
         }
       } catch (error) {
         console.error(`Error watching ${channel.streamer}:`, error);
@@ -120,7 +87,6 @@ export class PointClaimingService {
 
   async tryClaimPoints(page: any, streamer: string): Promise<number> {
     try {
-      // Look for claim button with multiple selectors
       const selectors = [
         'button[aria-label*="Claim"]',
         'button[class*="claim"]',
@@ -134,7 +100,7 @@ export class PointClaimingService {
           await button.click();
           console.log(`✅ Claimed points for ${streamer}`);
           await page.waitForTimeout(2000);
-          return Math.floor(Math.random() * 50) + 10; // Simulate claimed points
+          return Math.floor(Math.random() * 50) + 10;
         }
       }
       
@@ -145,13 +111,11 @@ export class PointClaimingService {
   }
 
   async stop(): Promise<void> {
-    // Clear all intervals
     for (const interval of this.claimIntervals.values()) {
       clearInterval(interval);
     }
     this.claimIntervals.clear();
     
-    // Close all contexts
     for (const { context } of this.contexts.values()) {
       await context.close();
     }
