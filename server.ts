@@ -396,7 +396,7 @@ async function startServer() {
   // --- POINT CLAIMING ENGINE ---
   async function attemptPointClaims() {
     if (pointClaimingService) {
-      await pointClaimingService.batchClaimPoints();
+      await pointClaimingService.claimPointsForAllAccounts();
     }
   }
 

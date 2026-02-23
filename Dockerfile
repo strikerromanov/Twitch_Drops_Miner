@@ -1,5 +1,5 @@
 # Multi-stage build for optimized production image
-FROM node:20-alpine AS builder
+FROM node:20-slim AS builder
 
 WORKDIR /app
 
@@ -9,8 +9,9 @@ COPY package*.json ./
 # Install all dependencies (including devDependencies for build)
 RUN npm ci
 
-# Install Playwright browsers (skip install-deps as we use Alpine)
+# Install Playwright browsers and system dependencies
 RUN npx playwright install chromium
+RUN npx playwright install-deps chromium
 
 # Copy source code
 COPY . .
@@ -19,19 +20,36 @@ COPY . .
 RUN npm run build
 
 # Production stage
-FROM node:20-alpine
+FROM node:20-slim
 
 WORKDIR /app
 
-# Install necessary system libraries for Playwright
-RUN apk add --no-cache \
-    nss \
-    freetype \
-    harfbuzz \
+# Install system libraries for Playwright
+RUN apt-get update && apt-get install -y \
+    wget \
+    gnupg \
     ca-certificates \
-    ttf-freefont \
-    woff2 \
-    && rm -rf /var/cache/apk/*
+    fonts-liberation \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libatspi2.0-0 \
+    libcups2 \
+    libdbus-1-3 \
+    libdrm2 \
+    libgbm1 \
+    libgtk-3-0 \
+    libnspr4 \
+    libnss3 \
+    libwayland-client0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxkbcommon0 \
+    libxrandr2 \
+    xdg-utils \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy package files
 COPY package*.json ./
@@ -50,7 +68,7 @@ COPY --from=builder /app/websocket-server.ts ./
 COPY --from=builder /app/multi-account-coordinator.ts ./
 COPY --from=builder /app/backup-service.ts ./
 
-# Copy Playwright browsers and cache from builder (only ms-playwright exists)
+# Copy Playwright browsers and cache from builder
 COPY --from=builder /root/.cache/ms-playwright /root/.cache/ms-playwright
 
 # Set environment for Playwright
