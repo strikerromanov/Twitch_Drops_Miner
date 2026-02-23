@@ -67,13 +67,9 @@ export class PointClaimingService {
     if (!accountData) return;
   const channels = this.db.prepare(`
     SELECT streamer FROM followed_channels
-    WHERE account_id = ? AND status = 'farming'
+    WHERE account_id = ? AND status = "farming"
     ORDER BY points ASC
-  ).all(accountId);
-  const channels = this.db.prepare(`
-    SELECT streamer FROM followed_channels
-    WHERE account_id = ? AND status = 'farming'
-    ORDER BY points ASC
+  `).all(accountId);
   ).all(accountId);
   const channels = this.db.prepare(`
     SELECT streamer FROM followed_channels
