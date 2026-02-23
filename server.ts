@@ -848,3 +848,17 @@ async function startServer() {
 }
 
 startServer();
+
+// Migration: Add viewer_count column if it doesn't exist
+try {
+  const columnCheck = db.prepare("PRAGMA table_info(followed_channels)").all();
+  const hasViewerCount = columnCheck.some((col: any) => col.name === 'viewer_count');
+  
+  if (!hasViewerCount) {
+    console.log('Adding viewer_count column to followed_channels...');
+    db.prepare('ALTER TABLE followed_channels ADD COLUMN viewer_count INTEGER DEFAULT 0').run();
+    console.log('✅ Migration: viewer_count column added');
+  }
+} catch (error) {
+  console.log('Migration check completed or column already exists');
+}

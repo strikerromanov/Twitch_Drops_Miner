@@ -1,7 +1,0 @@
-# Unraid Icon for Twitch Drops Miner
-
-Since this is a text environment, create a simple SVG icon:
-
-echo '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path fill="#9146FF" d="M391.17 103.47h-38.24v127.89h-38.24V103.47h-38.24v166.06h114.72V103.47zM262.27 103.47h-38.24v127.89h-38.24V103.47h-38.24v166.06h114.72V103.47zM133.37 103.47H95.13v127.89H56.89V103.47H18.65v166.06h114.72V103.47z"/><path fill="#9146FF" d="M467.54 62.81H44.46C20.02 62.81 0 82.83 0 107.27v285.19c0 24.44 20.02 44.46 44.46 44.46h423.08c24.44 0 44.46-20.02 44.46-44.46V107.27c0-24.44-20.02-44.46-44.46-44.46zm0 285.19H44.46V107.27h423.08v240.72z"/></svg>' > icon.svg
-
-# For Unraid, you can use this SVG as the container icon
