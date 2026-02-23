@@ -65,11 +65,31 @@ export class PointClaimingService {
   async watchAndClaim(accountId: number): Promise<void> {
     const accountData = this.contexts.get(accountId);
     if (!accountData) return;
-    
-    const { page } = accountData;
-    
-    // Get followed channels for this account
-    const channels = this.db.prepare('
+  const channels = this.db.prepare(`
+    SELECT streamer FROM followed_channels
+    WHERE account_id = ? AND status = 'farming'
+    ORDER BY points ASC
+  ).all(accountId);
+  const channels = this.db.prepare(`
+    SELECT streamer FROM followed_channels
+    WHERE account_id = ? AND status = 'farming'
+    ORDER BY points ASC
+  ).all(accountId);
+  const channels = this.db.prepare(`
+    SELECT streamer FROM followed_channels
+    WHERE account_id = ? AND status = 'farming'
+    ORDER BY points ASC
+  ).all(accountId);
+  const channels = this.db.prepare(`
+    SELECT streamer FROM followed_channels
+    WHERE account_id = ? AND status = 'farming'
+    ORDER BY points ASC
+  ).all(accountId);
+  const channels = this.db.prepare(`
+    SELECT streamer FROM followed_channels
+    WHERE account_id = ? AND status = 'farming'
+    ORDER BY points ASC
+  ).all(accountId);
       SELECT streamer FROM followed_channels 
       WHERE account_id = ? AND status = "farming"
       ORDER BY points ASC
