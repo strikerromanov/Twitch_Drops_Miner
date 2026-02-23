@@ -111,12 +111,12 @@ export class PointClaimingService {
   }
 
   async stop(): Promise<void> {
-    for (const interval of this.claimIntervals.values()) {
+    for (const interval of Array.from(this.claimIntervals.values())) {
       clearInterval(interval);
     }
     this.claimIntervals.clear();
     
-    for (const { context } of this.contexts.values()) {
+    for (const { context } of Array.from(this.contexts.values())) {
       await context.close();
     }
     this.contexts.clear();
