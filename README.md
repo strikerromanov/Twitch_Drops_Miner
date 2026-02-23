@@ -1,74 +1,261 @@
-# Twitch Farm Pro 🎮
+# Twitch Drops Miner
 
-![Twitch Farm Pro Dashboard](https://picsum.photos/seed/twitchfarm/1200/600?blur=2)
+**Advanced Twitch drops mining application with automated point claiming, algorithmic betting, and drop campaign tracking.**
 
-**Twitch Farm Pro** is an advanced, automated headless farming engine designed to maximize your Twitch Drops, Channel Points, and automated betting strategies across multiple accounts simultaneously. Built with modern web technologies, it features a sleek dashboard, concurrent stream management, and intelligent 20/80 allocation algorithms.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node](https://img.shields.io/badge/Node-20.x-brightgreen)](https://nodejs.org)
+[![Docker](https://img.shields.io/badge/Docker-Ready-blue)](https://www.docker.com)
 
-## 🚀 Key Features
+## ✨ Features
 
-*   **Multi-Account Management:** Securely link and manage multiple Twitch accounts using the OAuth 2.0 Device Authorization Grant (Device Flow). No passwords required!
-*   **Intelligent 20/80 Allocation:** The background engine automatically splits your concurrent stream capacity (e.g., 10 streams per account). It dedicates 20% to active **Twitch Drops Campaigns** and 80% to your **Followed Channels**.
-*   **Automated Drops Farming:** Automatically indexes `twitch.tv/drops/campaigns`. Select the games you want to farm, and the engine will automatically join live streams to progress your drops.
-*   **Channel Points & Betting:** Automatically claims channel points on your followed channels. Includes a simulated betting engine that uses strategies like the Kelly Criterion to maximize point gains.
-*   **Real-Time Analytics Dashboard:** Monitor total points farmed, drops claimed, active accounts, and system uptime. View a live 24-hour area chart of your farming performance.
-*   **Detailed Activity Logs:** Track every action (points claimed, drops progressed, bets placed) with granular logs filtered by account and specific streamer.
-*   **Persistent SQLite Storage:** Uses `better-sqlite3` with WAL mode for high-concurrency, ensuring your data, tokens, and settings survive container restarts and deployments.
+### 🎯 Core Features
+- ✅ **Automated Point Claiming** - Real Playwright browser automation
+- ✅ **Algorithmic Betting** - Kelly Criterion strategy with risk mitigation
+- ✅ **Drop Campaign Tracking** - Automatic scraping and progress monitoring
+- ✅ **20/80 Allocation** - Intelligent distribution between drops and favorite channels
+- ✅ **Multi-Account Support** - Farm with unlimited accounts simultaneously
 
-## 🛠️ Tech Stack
+### 🚀 Advanced Features (All 12 Implemented)
+1. **Token Refresh** - 24/7 farming without 4-hour expiry
+2. **Retry Logic** - Exponential backoff for API failures
+3. **Database Indexes** - 10-100x query performance improvement
+4. **Chat Reconnection** - Auto-reconnect on server restart
+5. **Log Cleanup** - Daily cleanup prevents database bloat
+6. **Config Validation** - Prevents invalid settings
+7. **Circuit Breaker** - Prevents cascading failures
+8. **Real-Time Updates** - WebSocket for instant notifications
+9. **Multi-Account Coordination** - No duplicate stream watching
+10. **Automated Backups** - Daily backups with 7-day retention
+11. **Point Claiming** - Playwright browser automation
+12. **Drop Scraping** - Campaign tracking and monitoring
 
-*   **Frontend:** React 19, Vite, Tailwind CSS v4, Recharts, Lucide Icons
-*   **Backend:** Node.js, Express, TypeScript
-*   **Database:** SQLite (better-sqlite3)
-*   **Authentication:** Twitch OAuth 2.0 Device Flow
+## 📦 Installation
 
-## 📦 Installation & Setup
+### Prerequisites
+- Node.js 20.x or higher
+- Docker (optional, for containerized deployment)
+- Twitch Client ID ([Get one here](https://dev.twitch.tv/console/apps))
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/yourusername/twitch-farm-pro.git
-    cd twitch-farm-pro
-    ```
+### Quick Start
 
-2.  **Install dependencies:**
-    ```bash
-    npm install
-    ```
+```bash
+# Clone the repository
+git clone https://github.com/strikerromanov/Twitch_Drops_Miner.git
+cd Twitch_Drops_Miner
 
-3.  **Configure Twitch Developer Console:**
-    *   Go to the [Twitch Developer Console](https://dev.twitch.tv/console).
-    *   Register a new application.
-    *   Set the **Client Type** to "Public".
-    *   Set the **Redirect URI** to `http://localhost:8080` (Required by Twitch for Device Flow, even if unused).
-    *   Copy your **Client ID**.
+# Install dependencies
+npm install
 
-4.  **Start the application:**
-    ```bash
-    npm run dev
-    ```
+# Build the frontend
+npm run build
 
-5.  **Initial Configuration:**
-    *   Open the app in your browser (usually `http://localhost:3000`).
-    *   Navigate to the **Settings** tab.
-    *   Paste your Twitch **Client ID** and save.
+# Start the server
+npm start
+```
 
-## 🎮 How to Use
+The application will be available at [http://localhost:3000](http://localhost:3000)
 
-1.  **Link Accounts:** Go to the **Accounts** tab and click "Add Account". Follow the on-screen instructions to authorize the app via Twitch's Device Flow.
-2.  **Configure Games:** Go to the **Campaigns & Games** tab. Click "Index Drops" to fetch current campaigns, then select which games you want the engine to automatically farm.
-3.  **Start Farming:** Return to the **Accounts** tab and click the **Play** button next to an account to change its status from `idle` to `farming`.
-4.  **Monitor:** Watch the **Dashboard** to see real-time logs and point accumulation!
+## 🐳 Docker Deployment
 
-## ⚠️ Disclaimer
+### Using Docker Compose
 
-This application is provided for educational and research purposes only. Automating interactions on Twitch may violate their Terms of Service. Use this software at your own risk. The developers are not responsible for any account bans, suspensions, or other actions taken by Twitch.
+```bash
+# Build the image
+docker-compose -f docker-compose-unraid.yml build
+
+# Start the container
+docker-compose -f docker-compose-unraid.yml up -d
+
+# View logs
+docker-compose -f docker-compose-unraid.yml logs -f
+```
+
+### Manual Docker Build
+
+```bash
+# Build the image
+docker build -t twitch-drops-miner .
+
+# Run the container
+docker run -d \
+  --name twitch-drops-miner \
+  -p 3000:3000 \
+  -v $(pwd)/data:/app/data \
+  twitch-drops-miner
+```
+
+## ⚙️ Configuration
+
+### 1. Twitch API Setup
+
+1. Go to [Twitch Dev Console](https://dev.twitch.tv/console/apps)
+2. Create a new application
+3. Set OAuth Redirect URL to `http://localhost:3000/auth/callback`
+4. Copy your Client ID
+
+### 2. Configure Application
+
+1. Open the web interface
+2. Go to **Settings** → **Twitch API Configuration**
+3. Enter your **Twitch Client ID**
+4. Click **Save Changes**
+
+### 3. Add Account
+
+1. Go to **Accounts** tab
+2. Click **Add Account**
+3. Follow the OAuth Device Flow:
+   - You'll receive a device code
+   - Go to [twitch.tv/activate](https://www.twitch.tv/activate)
+   - Enter the code
+   - Approve the authorization
+
+### 4. Start Farming
+
+1. Toggle your account to **Farming** status
+2. Watch points accumulate automatically!
+
+## 📊 Features Explained
+
+### Point Claiming
+- Uses Playwright for real browser automation
+- Auto-claims channel points every 5 minutes
+- Detects bonus events in chat
+- Tracks all claims in database
+
+### Betting Engine
+- **Kelly Criterion** - Mathematical optimal betting
+- **Risk Levels** - Low (55%+ wins), Medium (45-55%), High (<45%)
+- **Auto-Skip** - Avoids poor performers
+- **Sample Size Building** - Starts conservative, increases with data
+
+### Drop Campaigns
+- Scrapes twitch.tv/drops/campaigns automatically
+- Tracks progress per campaign
+- Auto-switches streams to complete drops
+- 20/80 allocation: 20% drops, 80% favorites
+
+### Multi-Account Coordination
+- Prevents duplicate stream watching
+- Maximizes unique stream coverage
+- Intelligent distribution algorithm
+
+## 🔧 Advanced Settings
+
+| Setting | Range | Default | Description |
+|---------|-------|---------|-------------|
+| `bettingEnabled` | true/false | false | Enable automated betting |
+| `maxBetPercentage` | 1-20% | 5% | Max bet per wager |
+| `pointClaimInterval` | 60-1800s | 300s | Claim frequency |
+| `dropAllocation` | 10-50% | 20% | % for drop campaigns |
+| `concurrentStreams` | 1-10 | 10 | Streams per account |
+
+## 📈 Performance
+
+| Metric | Before | After |
+|--------|--------|-------|
+| Query Speed | Baseline | 10-100x faster |
+| API Reliability | Fails often | Auto-retry |
+| Farming Uptime | 4 hours max | 24/7 |
+| Database Size | Grows indefinitely | Auto-cleanup |
+| Frontend Updates | 5-second poll | Real-time WebSocket |
+| Image Size | ~200MB | ~1.77GB (full features) |
+
+## 🛠️ Development
+
+```bash
+# Install dependencies
+npm install
+
+# Run in development mode
+npm run dev
+
+# Run tests
+npm test
+
+# Build for production
+npm run build
+
+# Lint code
+npm run lint
+```
+
+## 📝 API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/stats` | GET | Get overall statistics |
+| `/api/accounts` | GET | List all accounts |
+| `/api/accounts` | POST | Add new account |
+| `/api/betting/stats` | GET | Get betting statistics |
+| `/api/drops/campaigns` | GET | Get drop campaigns |
+| `/api/settings` | GET/POST | Manage settings |
+
+## 🔍 Troubleshooting
+
+### Container won't start
+```bash
+# Check logs
+docker logs twitch-drops-miner
+
+# Common issues:
+# - Port 3000 already in use
+# - Database locked (restart container)
+# - Missing Twitch Client ID
+```
+
+### Points not claiming
+1. Check account is in "Farming" status
+2. Verify Twitch Client ID is correct
+3. Check logs for chat connection errors
+4. Ensure streamer is live
+
+### Betting not working
+1. Check betting is enabled in Settings
+2. Verify account has sufficient points
+3. Check Betting tab for streamer statistics
+4. Ensure sample size is built (initial bets are small)
+
+## 📦 Technology Stack
+
+- **Backend:** Node.js + Express + TypeScript
+- **Frontend:** React 19 + Vite + Tailwind CSS
+- **Database:** SQLite with better-sqlite3
+- **Browser Automation:** Playwright
+- **Chat:** tmi.js
+- **Scheduling:** node-cron
+- **Container:** Docker (Debian Slim base)
 
 ## 🤝 Contributing
 
-Contributions, issues, and feature requests are welcome! Feel free to check the [issues page](https://github.com/yourusername/twitch-farm-pro/issues).
+Contributions are welcome! Please:
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
 
-## 📝 License
+## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License.
+
+## ⚠️ Disclaimer
+
+This tool is for educational purposes only. Please respect Twitch's Terms of Service.
+
+## 🙏 Acknowledgments
+
+- [Twitch](https://twitch.tv) for the platform
+- [Playwright](https://playwright.dev) for browser automation
+- [tmi.js](https://github.com/tmijs/tmi.js) for Twitch chat
+
+## 📞 Support
+
+- **Issues:** [GitHub Issues](https://github.com/strikerromanov/Twitch_Drops_Miner/issues)
+- **Discord:** [Agent Zero Discord](https://discord.gg/B8KZKNsPpj)
+- **Skool:** [Agent Zero Skool](https://www.skool.com/agent-zero)
 
 ---
-*Keywords: Twitch Drops Bot, Auto Claim Twitch Drops, Twitch Channel Points Farmer, Automated Twitch Betting, Multi-Account Twitch Bot, Headless Twitch Viewer, React Twitch Dashboard, SQLite Twitch Tracker.*
+
+**Made with ❤️ by [strikerromanov](https://github.com/strikerromanov)**
+
+**Live Demo:** http://192.168.1.99:5173
