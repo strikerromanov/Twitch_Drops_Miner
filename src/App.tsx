@@ -1,4 +1,5 @@
 import { useState, createContext, useContext } from 'react';
+import { WebSocketProvider } from "./components/WebSocketProvider";
 import { motion, AnimatePresence } from 'motion/react';
 import { Activity, Users, Gift, Coins, Settings as SettingsIcon, Menu, CheckCircle2, AlertCircle } from 'lucide-react';
 import Dashboard from './components/Dashboard';
@@ -41,6 +42,7 @@ export default function App() {
   };
 
   return (
+    <WebSocketProvider>
     <ToastContext.Provider value={{ showToast }}>
       <div className="flex h-screen overflow-hidden bg-[#09090b] text-[#fafafa]">
         {/* Sidebar */}
@@ -133,5 +135,6 @@ export default function App() {
         </AnimatePresence>
       </div>
     </ToastContext.Provider>
+    </WebSocketProvider>
   );
 }
