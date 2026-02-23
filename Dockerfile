@@ -55,7 +55,7 @@ RUN apt-get update && apt-get install -y \
 COPY package*.json ./
 
 # Install production dependencies only
-RUN npm ci --production && npm cache clean --force
+RUN npm ci && npm cache clean --force
 
 # Copy built frontend from builder
 COPY --from=builder /app/dist ./dist
@@ -63,6 +63,7 @@ COPY --from=builder /app/dist ./dist
 # Copy TypeScript server files and modules
 COPY --from=builder /app/server.ts ./
 COPY --from=builder /app/point-claiming.ts ./
+COPY --from=builder /app/betting-engine.ts ./
 COPY --from=builder /app/drop-scraping.ts ./
 COPY --from=builder /app/websocket-server.ts ./
 COPY --from=builder /app/multi-account-coordinator.ts ./
