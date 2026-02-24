@@ -173,7 +173,26 @@ try {
     db.prepare('ALTER TABLE followed_channels ADD COLUMN viewer_count INTEGER DEFAULT 0').run();
     console.log('✅ Migration: viewer_count column added');
   } else {
-    console.log('✅ viewer_count column already exists');
+    console.log('✅ viewer_count column already exists
+
+  // Add missing columns to logs table for new services
+  try {
+    db.prepare('ALTER TABLE logs ADD COLUMN streamer_id INTEGER').run();
+    console.log('✅ Added streamer_id column to logs table');
+  } catch (err: any) {
+    if (!err.message.includes('duplicate column')) {
+      console.error('Failed to add streamer_id column:', err.message);
+    }
+  }
+
+  try {
+    db.prepare('ALTER TABLE logs ADD COLUMN type TEXT').run();
+    console.log('✅ Added type column to logs table');
+  } catch (err: any) {
+    if (!err.message.includes('duplicate column')) {
+      console.error('Failed to add type column:', err.message);
+    }
+  }');
   }
   
   db.prepare('UPDATE followed_channels SET viewer_count = 0 WHERE viewer_count IS NULL').run();
