@@ -173,8 +173,8 @@ try {
     db.prepare('ALTER TABLE followed_channels ADD COLUMN viewer_count INTEGER DEFAULT 0').run();
     console.log('✅ Migration: viewer_count column added');
   } else {
-    console.log('✅ viewer_count column already exists
-
+    console.log('✅ viewer_count column already exists');
+  }
   // Add missing columns to logs table for new services
   try {
     db.prepare('ALTER TABLE logs ADD COLUMN streamer_id INTEGER').run();
