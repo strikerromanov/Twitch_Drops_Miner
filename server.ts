@@ -228,6 +228,11 @@ app.post('/api/accounts', async (req, res) => {
   try {
     const { username, accessToken, refreshToken } = req.body;
     
+    // Validate required fields
+    if (!username || !accessToken || !refreshToken) {
+      return res.status(400).json({ error: 'Missing required fields: username, accessToken, refreshToken are required' });
+    }
+    
     const result = db.prepare(`
       INSERT INTO accounts (username, accessToken, refreshToken, status)
       VALUES (?, ?, ?, 'idle')
@@ -276,9 +281,14 @@ app.post('/api/accounts/:id/status', (req, res) => {
     const { status } = req.body;
     const accountId = parseInt(req.params.id);
     
+    // Check if account exists first
+    const account = db.prepare('SELECT * FROM accounts WHERE id = ?').get(accountId) as any;
+    if (!account) {
+      return res.status(404).json({ error: 'Account not found' });
+    }
+    
     db.prepare('UPDATE accounts SET status = ? WHERE id = ?').run(status, accountId);
     
-    const account = db.prepare('SELECT * FROM accounts WHERE id = ?').get(accountId) as any;
     if (status === 'farming') {
       pointClaimingService.startWatchingAccount(accountId, account.accessToken);
     }

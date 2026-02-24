@@ -48,7 +48,7 @@ export class BettingEngine {
     try {
       // Get active farming accounts
       const accounts = this.db.prepare(`
-        SELECT id FROM accounts WHERE status = "farming"
+        SELECT id FROM accounts WHERE status = 'farming'
       `).all() as any[];
       
       for (const account of accounts) {
@@ -63,7 +63,7 @@ export class BettingEngine {
     // Get channels with active bets
     const channels = this.db.prepare(`
       SELECT streamer, points FROM followed_channels
-      WHERE account_id = ? AND status = "farming" AND points > 100
+      WHERE account_id = ? AND status = 'farming' AND points > 100
       ORDER BY viewer_count DESC
     `).all(accountId) as any[];
     
