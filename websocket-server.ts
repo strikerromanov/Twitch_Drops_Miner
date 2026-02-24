@@ -70,7 +70,7 @@ export class WebSocketService {
       const stats = this.db.prepare(`
         SELECT 
           COUNT(DISTINCT account_id) as activeAccounts,
-          SUM(points) as totalPoints,
+          SUM(followed_channels.points) as totalPoints,
           COUNT(DISTINCT streamer) as activeChannels
         FROM accounts
         JOIN followed_channels ON accounts.id = followed_channels.account_id
@@ -143,7 +143,7 @@ export class WebSocketService {
       const stats = this.db.prepare(`
         SELECT 
           COUNT(DISTINCT account_id) as activeAccounts,
-          SUM(points) as totalPoints,
+          SUM(followed_channels.points) as totalPoints,
           COUNT(DISTINCT streamer) as activeChannels
         FROM accounts
         JOIN followed_channels ON accounts.id = followed_channels.account_id
