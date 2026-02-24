@@ -392,6 +392,10 @@ app.post('/api/auth/device', async (req, res) => {
 
     const data = await response.json();
 
+    // Debug logging
+    console.log('[AUTH POLL] Twitch response status:', response.status, 'OK:', response.ok);
+    console.log('[AUTH POLL] Twitch response data:', JSON.stringify(data, null, 2));
+
     res.json({
       user_code: data.user_code,
       device_code: data.device_code,
@@ -435,6 +439,10 @@ app.post('/api/auth/poll', async (req, res) => {
     });
 
     const data = await response.json();
+
+    // Debug logging
+    console.log('[AUTH POLL] Twitch response status:', response.status, 'OK:', response.ok);
+    console.log('[AUTH POLL] Twitch response data:', JSON.stringify(data, null, 2));
 
     if (response.ok && data.access_token) {
       // Get user info with access token
@@ -483,7 +491,19 @@ app.post('/api/auth/poll', async (req, res) => {
       res.json({ status: 'pending' });
     } else if (data.error === 'slow_down') {
       res.json({ status: 'slow_down' });
+    } else if (data.error === 'expired_token') {
+      res.json({
+        status: 'error',
+        error: 'Device code has expired. Please start over and complete authentication within 30 minutes.'
+      });
+    } else if (data.error === 'invalid_device') {
+      res.json({
+        status: 'error',
+        error: 'Invalid device code. Please try adding your account again.'
+      });
     } else {
+      // Log unknown errors for debugging
+      console.error('[AUTH POLL] Unknown error from Twitch:', data);
       res.json({
         status: 'error',
         error: data.error || 'Authorization failed'
