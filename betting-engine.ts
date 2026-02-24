@@ -47,9 +47,9 @@ export class BettingEngine {
   async checkForOpportunities(): Promise<void> {
     try {
       // Get active farming accounts
-      const accounts = this.db.prepare('
+      const accounts = this.db.prepare(`
         SELECT id FROM accounts WHERE status = "farming"
-      ').all() as any[];
+      `).all() as any[];
       
       for (const account of accounts) {
         await this.findAndPlaceBets(account.id);
@@ -61,11 +61,11 @@ export class BettingEngine {
 
   async findAndPlaceBets(accountId: number): Promise<void> {
     // Get channels with active bets
-    const channels = this.db.prepare('
-      SELECT streamer, points FROM followed_channels 
+    const channels = this.db.prepare(`
+      SELECT streamer, points FROM followed_channels
       WHERE account_id = ? AND status = "farming" AND points > 100
       ORDER BY viewer_count DESC
-    ').all(accountId) as any[];
+    `).all(accountId) as any[];
     
     for (const channel of channels) {
       const opportunity = await this.analyzeOpportunity(accountId, channel.streamer);
@@ -78,9 +78,9 @@ export class BettingEngine {
 
   async analyzeOpportunity(accountId: number, streamer: string): Promise<any> {
     // Get streamer stats
-    const stats = this.db.prepare('
+    const stats = this.db.prepare(`
       SELECT * FROM betting_stats WHERE streamer = ?
-    ').get(streamer) as any;
+    `).get(streamer) as any;
     
     if (!stats) {
       // New streamer - small test bet
@@ -95,13 +95,13 @@ export class BettingEngine {
     const avgProfit = stats.totalProfit / stats.totalBets;
     
     // Kelly Criterion calculation
-    constKellyPercent = winRate - ((1 - winRate) / (stats.avgOdds || 2));
-    const kellyPercent = Math.max(0, Math.min(0.25, constKellyPercent)); // Cap at 25%
+    const calculatedKellyPercent = winRate - ((1 - winRate) / (stats.avgOdds || 2));
+    const kellyPercent = Math.max(0, Math.min(0.25, calculatedKellyPercent)); // Cap at 25%
     
     // Get account points
-    const accountPoints = this.db.prepare('
+    const accountPoints = this.db.prepare(`
       SELECT SUM(points) as total FROM followed_channels WHERE account_id = ?
-    ').get(accountId) as any;
+    `).get(accountId) as any;
     
     const availablePoints = accountPoints.total || 0;
     const suggestedBet = Math.floor(availablePoints * kellyPercent);
@@ -120,16 +120,16 @@ export class BettingEngine {
   async placeBet(accountId: number, streamer: string, amount: number, reason: string): Promise<void> {
     try {
       // Deduct points
-      this.db.prepare('
-        UPDATE followed_channels SET points = points - ? 
+      this.db.prepare(`
+        UPDATE followed_channels SET points = points - ?
         WHERE account_id = ? AND streamer = ?
-      ').run(amount, accountId, streamer);
+      `).run(amount, accountId, streamer);
       
       // Record bet
-      this.db.prepare('
+      this.db.prepare(`
         INSERT INTO betting_history (account_id, streamer, amount, bet_time, strategy)
         VALUES (?, ?, ?, datetime("now"), ?)
-      ').run(accountId, streamer, amount, reason);
+      `).run(accountId, streamer, amount, reason);
       
       console.log(`💰 Placed ${amount} point bet on ${streamer} (${reason})`);
       
@@ -149,20 +149,20 @@ export class BettingEngine {
     const profit = won ? amount : -amount;
     
     // Update stats
-    this.db.prepare('
-      UPDATE betting_stats 
+    this.db.prepare(`
+      UPDATE betting_stats
       SET totalBets = totalBets + 1,
           wins = wins + ?,
           totalProfit = totalProfit + ?
       WHERE streamer = ?
-    ').run(won ? 1 : 0, profit, streamer);
+    `).run(won ? 1 : 0, profit, streamer);
     
     if (won) {
       // Add winnings
-      this.db.prepare('
-        UPDATE followed_channels SET points = points + ? 
+      this.db.prepare(`
+        UPDATE followed_channels SET points = points + ?
         WHERE account_id = ? AND streamer = ?
-      ').run(amount * 2, accountId, streamer);
+      `).run(amount * 2, accountId, streamer);
       console.log(`🎉 Won ${amount * 2} points on ${streamer}!`);
     } else {
       console.log(`😞 Lost ${amount} points on ${streamer}`);
