@@ -376,9 +376,9 @@ app.post('/api/auth/device', async (req, res) => {
     const response = await fetch('https://id.twitch.tv/oauth2/device', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: JSON.stringify({
+      body: new URLSearchParams({
         client_id: twitchClientId,
         scopes: 'user:read:email chat:read chat:edit channel:read:subscriptions'
       })
@@ -425,9 +425,9 @@ app.post('/api/auth/poll', async (req, res) => {
     const response = await fetch('https://id.twitch.tv/oauth2/token', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: JSON.stringify({
+      body: new URLSearchParams({
         client_id: twitchClientId,
         grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
         device_code: device_code
