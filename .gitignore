@@ -37,3 +37,13 @@ Thumbs.db
 # Docker volumes (local only)
 /data/
 /backups/
+
+# Backup files created during development
+*.backup
+*.backup*
+*.broken
+*.broken*
+
+# Test and temporary files
+fix_database.js
+twitch-icon.png.txt
