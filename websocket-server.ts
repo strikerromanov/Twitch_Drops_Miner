@@ -73,7 +73,7 @@ export class WebSocketService {
           SUM(points) as totalPoints,
           COUNT(DISTINCT streamer) as activeChannels
         FROM accounts
-        JOIN active_streams ON accounts.id = active_streams.account_id
+        JOIN followed_channels ON accounts.id = followed_channels.account_id
         WHERE accounts.status = 'farming'
       `).get() as any;
 
@@ -146,7 +146,7 @@ export class WebSocketService {
           SUM(points) as totalPoints,
           COUNT(DISTINCT streamer) as activeChannels
         FROM accounts
-        JOIN active_streams ON accounts.id = active_streams.account_id
+        JOIN followed_channels ON accounts.id = followed_channels.account_id
         WHERE accounts.status = 'farming'
       `).get() as any;
 
@@ -168,8 +168,8 @@ export class WebSocketService {
       // Get recent bet results
       const recentBets = this.db.prepare(`
         SELECT * FROM betting_history 
-        WHERE placed_at > datetime('now', '-5 minutes')
-        ORDER BY placed_at DESC 
+        WHERE bet_time > datetime('now', '-5 minutes')
+        ORDER BY bet_time DESC 
         LIMIT 5
       `).all();
 

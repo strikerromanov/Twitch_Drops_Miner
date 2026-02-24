@@ -25,28 +25,7 @@ app.use(express.static('dist'));
 const db = new Database('./data/farm.db');
 db.pragma('journal_mode = WAL');
 
-// CRITICAL: Run database migrations immediately after initialization
-console.log('Running database migrations...');
-try {
-  // Migration: Add viewer_count column if it does not exist
-  const columnCheck = db.prepare("PRAGMA table_info(followed_channels)").all();
-  const hasViewerCount = columnCheck.some((col: any) => col.name === 'viewer_count');
-  
-  if (!hasViewerCount) {
-    console.log('🔧 Adding viewer_count column to followed_channels...');
-    db.prepare('ALTER TABLE followed_channels ADD COLUMN viewer_count INTEGER DEFAULT 0').run();
-    console.log('✅ Migration: viewer_count column added');
-  } else {
-    console.log('✅ viewer_count column already exists');
-  }
-  
-  // Update any NULL values to 0
-  db.prepare('UPDATE followed_channels SET viewer_count = 0 WHERE viewer_count IS NULL').run();
-} catch (error: any) {
-  console.log('Migration check completed:', error.message);
-}
-
-// Create tables
+// Create tables FIRST (before migrations)
 const createTables = () => {
   db.exec(`
     CREATE TABLE IF NOT EXISTS accounts (
@@ -126,9 +105,44 @@ const createTables = () => {
       level TEXT,
       message TEXT
     );
+    
+    CREATE TABLE IF NOT EXISTS tmi_chat_status (
+      account_id INTEGER PRIMARY KEY,
+      connected INTEGER DEFAULT 0,
+      channel TEXT,
+      last_connected TEXT
+    );
+    
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    );
+    
+    CREATE TABLE IF NOT EXISTS stream_allocations (
+      account_id INTEGER,
+      streamer TEXT,
+      assigned_at TEXT DEFAULT (datetime('now')),
+      PRIMARY KEY (account_id, streamer)
+    );
+    
+    CREATE TABLE IF NOT EXISTS active_streams (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id INTEGER,
+      streamer TEXT,
+      game TEXT,
+      viewer_count INTEGER DEFAULT 0,
+      started_at TEXT DEFAULT (datetime('now'))
+    );
+    
+    CREATE TABLE IF NOT EXISTS drop_progress (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id INTEGER,
+      campaign_id TEXT,
+      current_minutes INTEGER DEFAULT 0,
+      last_updated TEXT DEFAULT (datetime('now'))
+    );
   `);
   
-  // Create indexes
   console.log('Creating database indexes...');
   try {
     db.prepare('CREATE INDEX IF NOT EXISTS idx_followed_account_streamer ON followed_channels(account_id, streamer)').run();
@@ -143,14 +157,33 @@ const createTables = () => {
 
 createTables();
 
+// NOW run migrations AFTER tables exist
+console.log('Running database migrations...');
+try {
+  const columnCheck = db.prepare("PRAGMA table_info(followed_channels)").all();
+  const hasViewerCount = columnCheck.some((col: any) => col.name === 'viewer_count');
+  
+  if (!hasViewerCount) {
+    console.log('🔧 Adding viewer_count column to followed_channels...');
+    db.prepare('ALTER TABLE followed_channels ADD COLUMN viewer_count INTEGER DEFAULT 0').run();
+    console.log('✅ Migration: viewer_count column added');
+  } else {
+    console.log('✅ viewer_count column already exists');
+  }
+  
+  db.prepare('UPDATE followed_channels SET viewer_count = 0 WHERE viewer_count IS NULL').run();
+} catch (error: any) {
+  console.log('Migration check completed:', error.message);
+}
+
 // Initialize enhanced services
 console.log('Initializing enhanced services...');
 
 const pointClaimingService = new PointClaimingService(db);
 const dropScrapingService = new DropScrapingService(db);
 const webSocketService = new WebSocketService(server, db);
-const multiAccountCoordinator = new MultiAccountCoordinator("./data/farm.db");
-const backupService = new BackupService("./data/farm.db");
+const multiAccountCoordinator = new MultiAccountCoordinator('./data/farm.db');
+const backupService = new BackupService('./data/farm.db');
 const bettingEngine = new BettingEngine(db);
 
 // Initialize all services
@@ -169,12 +202,12 @@ const chatClients: Map<number, any> = new Map();
 app.get('/api/stats', (req, res) => {
   try {
     const stats = db.prepare(`
-      SELECT 
-        COALESCE(SUM(points), 0) as totalPoints,
+      SELECT
+        COALESCE((SELECT SUM(points) FROM followed_channels), 0) as totalPoints,
         (SELECT COUNT(*) FROM point_claim_history) as totalClaims,
         (SELECT COUNT(*) FROM accounts WHERE status = 'farming') as activeAccounts,
         (SELECT COUNT(*) FROM betting_history) as totalBets,
-        (SELECT COUNT(DISTINCT account_id) FROM tmi_chat_status WHERE connected = 1) as connectedChats
+        (SELECT COUNT(*) FROM tmi_chat_status WHERE connected = 1) as connectedChats
     `).get() as any;
     
     res.json({
@@ -191,7 +224,6 @@ app.get('/api/stats', (req, res) => {
   }
 });
 
-// Add account endpoint
 app.post('/api/accounts', async (req, res) => {
   try {
     const { username, accessToken, refreshToken } = req.body;
@@ -201,16 +233,14 @@ app.post('/api/accounts', async (req, res) => {
       VALUES (?, ?, ?, 'idle')
     `).run(username, accessToken, refreshToken);
     
-    // Initialize betting stats for new streamers
     bettingEngine.setEnabled(true);
     
-    res.json({ success: true, accountId: result.lastInsertRowId });
+    res.json({ success: true, accountId: result.lastInsertRowid });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Get accounts endpoint
 app.get('/api/accounts', (req, res) => {
   try {
     const accounts = db.prepare('SELECT * FROM accounts').all();
@@ -220,7 +250,27 @@ app.get('/api/accounts', (req, res) => {
   }
 });
 
-// Update account status
+app.delete('/api/accounts/:id', (req, res) => {
+  try {
+    const accountId = parseInt(req.params.id);
+    
+    if (chatClients.has(accountId)) {
+      const client = chatClients.get(accountId);
+      client?.disconnect();
+      chatClients.delete(accountId);
+    }
+    
+    db.prepare('DELETE FROM followed_channels WHERE account_id = ?').run(accountId);
+    db.prepare('DELETE FROM tmi_chat_status WHERE account_id = ?').run(accountId);
+    db.prepare('DELETE FROM accounts WHERE id = ?').run(accountId);
+    
+    console.log(`Deleted account ${accountId}`);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post('/api/accounts/:id/status', (req, res) => {
   try {
     const { status } = req.body;
@@ -228,7 +278,6 @@ app.post('/api/accounts/:id/status', (req, res) => {
     
     db.prepare('UPDATE accounts SET status = ? WHERE id = ?').run(status, accountId);
     
-    // Start/stop point claiming
     const account = db.prepare('SELECT * FROM accounts WHERE id = ?').get(accountId) as any;
     if (status === 'farming') {
       pointClaimingService.startWatchingAccount(accountId, account.accessToken);
@@ -240,12 +289,10 @@ app.post('/api/accounts/:id/status', (req, res) => {
   }
 });
 
-// Betting settings
 app.post('/api/settings/betting', (req, res) => {
   try {
     const { enabled, maxBetPercentage } = req.body;
     
-    // Save to settings
     db.prepare(`
       INSERT OR REPLACE INTO settings (key, value)
       VALUES ('bettingEnabled', ?)
@@ -264,7 +311,6 @@ app.post('/api/settings/betting', (req, res) => {
   }
 });
 
-// Get betting stats
 app.get('/api/betting/stats', (req, res) => {
   try {
     const stats = db.prepare(`
@@ -280,10 +326,8 @@ app.get('/api/betting/stats', (req, res) => {
   }
 });
 
-// Get drop campaigns
 app.get('/api/drops/campaigns', async (req, res) => {
   try {
-    // Scrape campaigns
     const campaigns = await dropScrapingService.scrapeDropCampaigns();
     res.json(campaigns);
   } catch (error: any) {
@@ -291,9 +335,8 @@ app.get('/api/drops/campaigns', async (req, res) => {
   }
 });
 
-// Health check
 app.get('/api/health', (req, res) => {
-  res.json({ 
+  res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
     features: {
@@ -306,11 +349,10 @@ app.get('/api/health', (req, res) => {
 });
 
 // Scheduled tasks
-// Point claiming every 5 minutes
 cron.schedule('*/5 * * * *', async () => {
   console.log('[SYSTEM] Running scheduled point claim task...');
   try {
-    const accounts = db.prepare('SELECT id FROM accounts WHERE status = "farming"').all() as any[];
+    const accounts = db.prepare("SELECT id FROM accounts WHERE status = 'farming'").all() as any[];
     for (const account of accounts) {
       await pointClaimingService.watchAndClaim(account.id);
     }
@@ -319,7 +361,6 @@ cron.schedule('*/5 * * * *', async () => {
   }
 });
 
-// Drop scraping every 30 minutes
 cron.schedule('*/30 * * * *', async () => {
   console.log('[SYSTEM] Scraping drop campaigns...');
   try {
@@ -329,11 +370,10 @@ cron.schedule('*/30 * * * *', async () => {
   }
 });
 
-// Log cleanup daily at midnight
 cron.schedule('0 0 * * *', () => {
   console.log('[SYSTEM] Running daily log cleanup...');
   try {
-    db.prepare(`DELETE FROM logs WHERE time < datetime('now', '-30 days')`).run();
+    db.prepare("DELETE FROM logs WHERE time < datetime('now', '-30 days')").run();
     db.prepare(`DELETE FROM logs WHERE id < (
       SELECT id FROM logs ORDER BY id DESC LIMIT 1 OFFSET 10000
     )`).run();
