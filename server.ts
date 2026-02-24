@@ -315,8 +315,13 @@ app.get('/api/accounts', (req, res) => {
       a.createdAt
     FROM accounts a`).all();
 
-    // Add activeStreams array for each account
-    const accountsWithStreams = accounts.map((acc: any) => {
+    // Add activeStreams, points, and followedChannels for each account
+    const accountsWithDetails = accounts.map((acc: any) => {
+      // Get total points for this account (sum of all followed channels)
+      const pointsResult = db.prepare('SELECT COALESCE(SUM(points), 0) as total FROM followed_channels WHERE account_id = ?').get(acc.id);
+      const totalPoints = pointsResult ? pointsResult.total : 0;
+
+      // Get active streams (channels with status not null)
       const activeStreams = db.prepare(`
         SELECT streamer, points, viewer_count,
                CASE WHEN status = 'drop' THEN 'drop' ELSE 'favorite' END as type
@@ -324,13 +329,22 @@ app.get('/api/accounts', (req, res) => {
         WHERE account_id = ? AND status IS NOT NULL
       `).all(acc.id);
 
+      // Get all followed channels
+      const followedChannels = db.prepare(`
+        SELECT id, streamer, streamer_id, status, game_name, viewer_count, points, bets
+        FROM followed_channels
+        WHERE account_id = ?
+      `).all(acc.id);
+
       return {
         ...acc,
-        activeStreams
+        points: totalPoints,
+        activeStreams: activeStreams || [],
+        followedChannels: followedChannels || []
       };
     });
 
-    res.json(accountsWithStreams);
+    res.json(accountsWithDetails);
   } catch (error: any) {
     console.error('Error fetching accounts:', error);
     res.status(500).json({ error: error.message });
@@ -675,6 +689,74 @@ cron.schedule('0 0 * * *', () => {
 });
 
 // SPA fallback
+// GET /api/logs - Get system logs
+app.get('/api/logs', (req, res) => {
+  try {
+    const logs = db.prepare(`
+      SELECT * FROM logs
+      ORDER BY time DESC
+      LIMIT 100
+    `).all();
+    res.json(logs);
+  } catch (error: any) {
+    // If logs table doesn't exist, return empty array
+    res.json([]);
+  }
+});
+
+// GET /api/campaigns - Get all drop campaigns
+app.get('/api/campaigns', (req, res) => {
+  try {
+    const campaigns = db.prepare(`
+      SELECT * FROM drop_campaigns
+      ORDER BY status ASC, end_time DESC
+    `).all();
+    res.json(campaigns);
+  } catch (error: any) {
+    res.json([]);
+  }
+});
+
+// GET /api/games - Get all games with drops
+app.get('/api/games', (req, res) => {
+  try {
+    const games = db.prepare(`
+      SELECT 
+        id,
+        name,
+        last_drop as lastDrop,
+        whitelisted,
+        (SELECT COUNT(*) FROM drop_campaigns WHERE drop_campaigns.game = games.name) as activeCampaigns
+      FROM games
+      ORDER BY last_drop DESC NULLS LAST
+    `).all();
+    res.json(games);
+  } catch (error: any) {
+    res.json([]);
+  }
+});
+
+// POST /api/games/:id/toggle - Toggle game whitelisting
+app.post('/api/games/:id/toggle', (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Get current whitelisted status
+    const game = db.prepare('SELECT whitelisted FROM games WHERE id = ?').get(id);
+    if (!game) {
+      return res.status(404).json({ error: 'Game not found' });
+    }
+
+    // Toggle status
+    const newStatus = game.whitelisted === 1 ? 0 : 1;
+    db.prepare('UPDATE games SET whitelisted = ? WHERE id = ?').run(newStatus, id);
+
+    res.json({ success: true, whitelisted: newStatus });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('*', (req, res) => {
   res.sendFile('dist/index.html', { root: '.' });
 });
