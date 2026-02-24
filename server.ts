@@ -176,6 +176,21 @@ try {
   console.log('Migration check completed:', error.message);
 }
 
+  // Check if accounts has user_id column
+  try {
+    const accountsColumns = db.prepare("PRAGMA table_info(accounts)").all();
+    const hasUserId = accountsColumns.some((col: any) => col.name === 'user_id');
+    if (!hasUserId) {
+      console.log('🔧 Adding user_id column to accounts...');
+      db.prepare('ALTER TABLE accounts ADD COLUMN user_id TEXT').run();
+      console.log('✅ Migration: user_id column added to accounts');
+    } else {
+      console.log('✅ accounts already has user_id column');
+    }
+  } catch (error: any) {
+    console.log('Migration check completed:', error.message);
+  }
+
   // Check if active_streams has viewer_count column
   try {
     const activeStreamsColumns = db.prepare("PRAGMA table_info(active_streams)").all();
@@ -468,17 +483,17 @@ app.post('/api/auth/poll', async (req, res) => {
         // Update existing account
         db.prepare(`
           UPDATE accounts SET 
-            access_token = ?, 
-            refresh_token = ?, 
+            accessToken = ?, 
+            refreshToken = ?, 
             status = 'idle',
-            updated_at = datetime('now')
+            createdAt = datetime('now')
           WHERE user_id = ?
         `).run(data.access_token, data.refresh_token || '', userId);
       } else {
         // Create new account
         db.prepare(`
-          INSERT INTO accounts (username, user_id, access_token, refresh_token, status, created_at)
-          VALUES (?, ?, ?, ?, 'idle', datetime('now'))
+          INSERT INTO accounts (username, user_id, accessToken, refreshToken, status)
+          VALUES (?, ?, ?, ?, 'idle')
         `).run(username, userId, data.access_token, data.refresh_token || '');
       }
 
