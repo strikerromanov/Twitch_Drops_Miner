@@ -20,8 +20,8 @@ export class WebSocketService {
   private db: Database.Database;
   private broadcastInterval: NodeJS.Timeout | null = null;
 
-  constructor(server: Server, dbPath: string) {
-    this.db = new Database(dbPath);
+  constructor(server: Server, db: Database.Database) {
+    this.db = db;
     this.wss = new WebSocketServer({ server, path: '/ws' });
     
     this.wss.on('connection', (ws: WebSocket) => {

@@ -148,8 +148,8 @@ console.log('Initializing enhanced services...');
 
 const pointClaimingService = new PointClaimingService(db);
 const dropScrapingService = new DropScrapingService(db);
-const webSocketService = new WebSocketService(server, "./data/farm.db");
-const multiAccountCoordinator = new MultiAccountCoordinator(db);
+const webSocketService = new WebSocketService(server, db);
+const multiAccountCoordinator = new MultiAccountCoordinator("./data/farm.db");
 const backupService = new BackupService("./data/farm.db");
 const bettingEngine = new BettingEngine(db);
 
