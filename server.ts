@@ -176,6 +176,22 @@ try {
   console.log('Migration check completed:', error.message);
 }
 
+  // Check if active_streams has viewer_count column
+  try {
+    const activeStreamsColumns = db.prepare("PRAGMA table_info(active_streams)").all();
+    const hasActiveStreamsViewerCount = activeStreamsColumns.some((col: any) => col.name === 'viewer_count');
+    
+    if (!hasActiveStreamsViewerCount) {
+      console.log('🔧 Adding viewer_count column to active_streams...');
+      db.prepare('ALTER TABLE active_streams ADD COLUMN viewer_count INTEGER DEFAULT 0').run();
+      console.log('✅ Migration: viewer_count column added to active_streams');
+    } else {
+      console.log('✅ active_streams already has viewer_count column');
+    }
+  } catch (error: any) {
+    console.log('active_streams migration check:', error.message);
+  }
+
 // Initialize enhanced services
 console.log('Initializing enhanced services...');
 
