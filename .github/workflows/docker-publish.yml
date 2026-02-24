@@ -9,14 +9,12 @@ on:
 
 env:
   IMAGE_NAME: strikerromanov/twitch-drops-miner
-  REGISTRY: ghcr.io
+  REGISTRY: docker.io
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      packages: write
-      id-token: write
       contents: read
       packages: write
       id-token: write
@@ -25,15 +23,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Container Registry
+      - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Extract metadata
         id: meta
@@ -49,16 +50,6 @@ jobs:
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
-          labels: ${{ steps.meta.outputs.labels }}
-          labels: org.opencontainers.image.title="Twitch Drops Miner"
-          labels: org.opencontainers.image.description="Automated Twitch drops miner with point claiming and betting"
-          labels: org.opencontainers.image.source=https://github.com/strikerromanov/Twitch_Drops_Miner
-          push: ${{ github.event_name != pull_request }}
-          tags: ${{ steps.meta.outputs.tags }}
-          build-args: |
-            BUILDTIME=${{ steps.time.outputs.time }}
-            VERSION=${{ github.ref_name }}
-            COMMIT=${{ github.sha }}
         with:
           context: .
           push: true

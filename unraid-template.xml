@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <Container version="2">
   <Name>twitch-drops-miner</Name>
-  <Repository>ghcr.io/strikerromanov/twitch-drops-miner:latest</Repository>
+  <Repository>docker.io/strikerromanov/twitch-drops-miner:latest</Repository>
   <Registry>https://github.com/strikerromanov/Twitch_Drops_Miner</Registry>
   <Branch>main</Branch>
   <Network>bridge</Network>
