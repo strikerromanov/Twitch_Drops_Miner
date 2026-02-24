@@ -307,9 +307,32 @@ app.post('/api/accounts', async (req, res) => {
 
 app.get('/api/accounts', (req, res) => {
   try {
-    const accounts = db.prepare('SELECT * FROM accounts').all();
-    res.json(accounts);
+    const accounts = db.prepare(`SELECT
+      a.id,
+      a.username,
+      a.user_id,
+      a.status,
+      a.createdAt
+    FROM accounts a`).all();
+
+    // Add activeStreams array for each account
+    const accountsWithStreams = accounts.map((acc: any) => {
+      const activeStreams = db.prepare(`
+        SELECT streamer, points, viewer_count,
+               CASE WHEN status = 'drop' THEN 'drop' ELSE 'favorite' END as type
+        FROM followed_channels
+        WHERE account_id = ? AND status IS NOT NULL
+      `).all(acc.id);
+
+      return {
+        ...acc,
+        activeStreams
+      };
+    });
+
+    res.json(accountsWithStreams);
   } catch (error: any) {
+    console.error('Error fetching accounts:', error);
     res.status(500).json({ error: error.message });
   }
 });
