@@ -536,7 +536,7 @@ app.post('/api/auth/poll', async (req, res) => {
           UPDATE accounts SET 
             accessToken = ?, 
             refreshToken = ?, 
-            status = 'idle',
+            status = 'farming',
             createdAt = datetime('now')
           WHERE user_id = ?
         `).run(data.access_token, data.refresh_token || '', userId);
@@ -544,7 +544,7 @@ app.post('/api/auth/poll', async (req, res) => {
         // Create new account
         db.prepare(`
           INSERT INTO accounts (username, user_id, accessToken, refreshToken, status)
-          VALUES (?, ?, ?, ?, 'idle')
+          VALUES (?, ?, ?, ?, 'farming')
         `).run(username, userId, data.access_token, data.refresh_token || '');
       }
 
