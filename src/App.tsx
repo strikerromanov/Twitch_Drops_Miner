@@ -1,4 +1,4 @@
-import { useState, createContext, useContext } from 'react';
+import React, { useState, createContext, useContext } from 'react';
 import { WebSocketProvider } from "./components/WebSocketProvider";
 import { motion, AnimatePresence } from 'motion/react';
 import { Activity, Users, Gift, Coins, Settings as SettingsIcon, Menu, CheckCircle2, AlertCircle } from 'lucide-react';
@@ -11,6 +11,44 @@ import Settings from './components/Settings';
 // Global Toast Context for UI feedback
 export const ToastContext = createContext<any>(null);
 export const useToast = () => useContext(ToastContext);
+
+
+class ErrorBoundary extends React.Component<any, any> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error('Error caught by boundary:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex items-center justify-center h-screen bg-[#09090b] text-[#fafafa]">
+          <div className="text-center">
+            <h1 className="text-2xl font-semibold mb-2">Something went wrong</h1>
+            <p className="text-[#a1a1aa] mb-4">An error occurred while loading this page.</p>
+            <button
+              onClick={() => this.setState({ hasError: false })}
+              className="px-4 py-2 bg-[#9146FF] hover:bg-[#772ce8] rounded-lg"
+            >
+              Try Again
+            </button>
+            <p className="text-xs text-[#a1a1aa] mt-4 font-mono">{this.state.error?.toString()}</p>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -109,7 +147,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -10 }}
                 transition={{ duration: 0.2 }}
               >
-                {renderContent()}
+                <ErrorBoundary>{renderContent()}</ErrorBoundary>
               </motion.div>
             </AnimatePresence>
           </div>

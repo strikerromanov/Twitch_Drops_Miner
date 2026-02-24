@@ -179,7 +179,7 @@ export default function Accounts() {
                   </span>
                 </div>
                 <div className="col-span-4 flex flex-wrap gap-2">
-                  {acc.activeStreams && acc.activeStreams.length > 0 ? (
+                  {acc.activeStreams && acc.activeStreams.length > 0 && Array.isArray(acc.activeStreams) ? (
                     acc.activeStreams.map((stream: any, idx: number) => (
                       <button 
                         key={idx}
@@ -200,7 +200,7 @@ export default function Accounts() {
                   )}
                 </div>
                 <div className="col-span-1 text-right data-value text-[#fafafa]">
-                  {acc.points.toLocaleString()}
+                  {(acc.points || 0).toLocaleString()}
                 </div>
                 <div className="col-span-2 flex items-center justify-end gap-2">
                   <button 
@@ -227,7 +227,7 @@ export default function Accounts() {
               {expandedAccounts.includes(acc.id) && (
                 <div className="bg-[#09090b] border-t border-[#27272a] p-4 pl-14">
                   <h3 className="text-sm font-medium text-[#a1a1aa] mb-3 uppercase tracking-wider">Followed Channels</h3>
-                  {acc.followedChannels && acc.followedChannels.length > 0 ? (
+                  {acc.followedChannels && acc.followedChannels.length > 0 && Array.isArray(acc.followedChannels) ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                       {acc.followedChannels.map((channel: any) => (
                         <div key={channel.id} className="bg-[#18181b] border border-[#27272a] rounded-lg p-3 flex flex-col gap-2">
