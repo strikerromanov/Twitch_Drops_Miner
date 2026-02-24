@@ -114,7 +114,7 @@ class FollowedChannelsIndexer {
   }
 
   private getAccessToken(): string {
-    const account = this.db.prepare('SELECT accessToken FROM accounts WHERE status = ? LIMIT 1').get('farming') as any;
+    const account = this.db.prepare('SELECT access_token FROM accounts WHERE status = ? LIMIT 1').get('farming') as any;
     return account?.access_token || '';
   }
 
