@@ -15,6 +15,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
+      packages: write
+      id-token: write
       contents: read
       packages: write
       id-token: write
@@ -47,6 +49,16 @@ jobs:
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
+          labels: ${{ steps.meta.outputs.labels }}
+          labels: org.opencontainers.image.title="Twitch Drops Miner"
+          labels: org.opencontainers.image.description="Automated Twitch drops miner with point claiming and betting"
+          labels: org.opencontainers.image.source=https://github.com/strikerromanov/Twitch_Drops_Miner
+          push: ${{ github.event_name != pull_request }}
+          tags: ${{ steps.meta.outputs.tags }}
+          build-args: |
+            BUILDTIME=${{ steps.time.outputs.time }}
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
         with:
           context: .
           push: true
