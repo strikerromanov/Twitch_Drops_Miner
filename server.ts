@@ -2,6 +2,7 @@
 import express from 'express';
 import cors from 'cors';
 import Database from 'better-sqlite3';
+
 import { createServer } from 'http';
 import cron from 'node-cron';
 import { PointClaimingService } from './point-claiming.js';
@@ -11,6 +12,9 @@ import { MultiAccountCoordinator } from './multi-account-coordinator.js';
 import { BackupService } from './backup-service.js';
 import { BettingEngine } from './betting-engine.js';
 import tmi from 'tmi.js';
+
+// Import new farming and indexing services
+
 
 const app = express();
 const server = createServer(app);
@@ -240,538 +244,40 @@ console.log('Initializing enhanced services...');
 
 const pointClaimingService = new PointClaimingService(db);
 const dropScrapingService = new DropScrapingService(db);
-const webSocketService = new WebSocketService(server, db);
-const multiAccountCoordinator = new MultiAccountCoordinator('./data/farm.db');
-const backupService = new BackupService('./data/farm.db');
-const bettingEngine = new BettingEngine(db);
 
-// Initialize all services
-await pointClaimingService.initialize();
-await dropScrapingService.initialize();
-bettingEngine.initialize();
 
-console.log('Enhanced features loaded: Point Claiming, Betting Engine, 20/80 Allocation');
-console.log('NEW: Real Point Claiming (Playwright), Drop Scraping, WebSocket, Multi-Account Coordination, Automated Backups');
-console.log('Event-Driven Betting: Places bets when opportunities arise, not on schedule');
-
-// Chat clients for point claiming
-const chatClients: Map<number, any> = new Map();
-
-// API Routes
-app.get('/api/stats', (req, res) => {
-  try {
-    const stats = db.prepare(`
-      SELECT
-        COALESCE((SELECT SUM(points) FROM followed_channels), 0) as totalPoints,
-        (SELECT COUNT(*) FROM point_claim_history) as totalClaims,
-        (SELECT COUNT(*) FROM accounts WHERE status = 'farming') as activeAccounts,
-        (SELECT COUNT(*) FROM betting_history) as totalBets,
-        (SELECT COUNT(*) FROM tmi_chat_status WHERE connected = 1) as connectedChats
-    `).get() as any;
-    
-    res.json({
-      totalPoints: stats.totalPoints || 0,
-      dropsClaimed: 0,
-      activeAccounts: stats.activeAccounts || 0,
-      uptime: 'Real-time API Active',
-      totalClaims: stats.totalClaims || 0,
-      totalBets: stats.totalBets || 0,
-      connectedChats: stats.connectedChats || 0
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/api/accounts', async (req, res) => {
-  try {
-    const { username, accessToken, refreshToken } = req.body;
-    
-    // Validate required fields
-    if (!username || !accessToken || !refreshToken) {
-      return res.status(400).json({ error: 'Missing required fields: username, accessToken, refreshToken are required' });
+  // Initialize new services using dynamic imports
+  (async () => {
+    try {
+      const settings = db.prepare('SELECT * FROM settings').all() as any[];
+      const clientId = settings.find(s => s.key === 'twitchClientId')?.value || '';
+      
+      // Dynamic imports to avoid module format issues
+      const { default: Dropboxer } = await import('./drop-indexer.js');
+      const { default: ChatFarmingService } = await import('./chat-farming.js');
+      const { default: FollowedChannelsIndexer } = await import('./followed-channels-indexer.js');
+      
+      const dropIndexer = new Dropboxer(db, clientId);
+      const chatFarming = new ChatFarmingService(db);
+      const followedIndexer = new FollowedChannelsIndexer(db, clientId);
+      
+      console.log('[SERVICES] Dropboxer initialized');
+      console.log('[SERVICES] Chat Farming Service initialized');
+      console.log('[SERVICES] Followed Channels Indexer initialized');
+      
+      // Start drop indexing
+      dropIndexer.start();
+      
+      // Start followed channels indexing
+      followedIndexer.start();
+      
+      // Make services globally available for API routes
+      (global as any).dropIndexer = dropIndexer;
+      (global as any).chatFarming = chatFarming;
+      (global as any).followedIndexer = followedIndexer;
+    } catch (error) {
+      console.error('[SERVICES] Failed to initialize services:', error);
     }
-    
-    const result = db.prepare(`
-      INSERT INTO accounts (username, accessToken, refreshToken, status)
-      VALUES (?, ?, ?, 'idle')
-    `).run(username, accessToken, refreshToken);
-    
-    bettingEngine.setEnabled(true);
-    
-    res.json({ success: true, accountId: result.lastInsertRowid });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+  })();
 
-app.get('/api/accounts', (req, res) => {
-  try {
-    const accounts = db.prepare(`SELECT
-      a.id,
-      a.username,
-      a.user_id,
-      a.status,
-      a.createdAt
-    FROM accounts a`).all();
 
-    // Add activeStreams, points, and followedChannels for each account
-    const accountsWithDetails = accounts.map((acc: any) => {
-      // Get total points for this account (sum of all followed channels)
-      const pointsResult = db.prepare('SELECT COALESCE(SUM(points), 0) as total FROM followed_channels WHERE account_id = ?').get(acc.id);
-      const totalPoints = pointsResult ? pointsResult.total : 0;
-
-      // Get active streams (channels with status not null)
-      const activeStreams = db.prepare(`
-        SELECT streamer, points, viewer_count,
-               CASE WHEN status = 'drop' THEN 'drop' ELSE 'favorite' END as type
-        FROM followed_channels
-        WHERE account_id = ? AND status IS NOT NULL
-      `).all(acc.id);
-
-      // Get all followed channels
-      const followedChannels = db.prepare(`
-        SELECT id, streamer, streamer_id, status, game_name, viewer_count, points, bets
-        FROM followed_channels
-        WHERE account_id = ?
-      `).all(acc.id);
-
-      return {
-        ...acc,
-        points: totalPoints,
-        activeStreams: activeStreams || [],
-        followedChannels: followedChannels || []
-      };
-    });
-
-    res.json(accountsWithDetails);
-  } catch (error: any) {
-    console.error('Error fetching accounts:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.delete('/api/accounts/:id', (req, res) => {
-  try {
-    const accountId = parseInt(req.params.id);
-    
-    if (chatClients.has(accountId)) {
-      const client = chatClients.get(accountId);
-      client?.disconnect();
-      chatClients.delete(accountId);
-    }
-    
-    db.prepare('DELETE FROM followed_channels WHERE account_id = ?').run(accountId);
-    db.prepare('DELETE FROM tmi_chat_status WHERE account_id = ?').run(accountId);
-    db.prepare('DELETE FROM accounts WHERE id = ?').run(accountId);
-    
-    console.log(`Deleted account ${accountId}`);
-    res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/api/accounts/:id/status', (req, res) => {
-  try {
-    const { status } = req.body;
-    const accountId = parseInt(req.params.id);
-    
-    // Check if account exists first
-    const account = db.prepare('SELECT * FROM accounts WHERE id = ?').get(accountId) as any;
-    if (!account) {
-      return res.status(404).json({ error: 'Account not found' });
-    }
-    
-    db.prepare('UPDATE accounts SET status = ? WHERE id = ?').run(status, accountId);
-    
-    if (status === 'farming') {
-      pointClaimingService.startWatchingAccount(accountId, account.accessToken);
-    }
-    
-    res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// GET /api/settings - Load all settings
-app.get('/api/settings', (req, res) => {
-  try {
-    const twitchClientId = db.prepare('SELECT value FROM settings WHERE key = ?').get('twitchClientId')?.value || '';
-    const concurrentStreams = db.prepare('SELECT value FROM settings WHERE key = ?').get('concurrentStreams')?.value || '10';
-    const dropAllocation = db.prepare('SELECT value FROM settings WHERE key = ?').get('dropAllocation')?.value || '20';
-    const bettingEnabled = db.prepare('SELECT value FROM settings WHERE key = ?').get('bettingEnabled')?.value || 'false';
-    const maxBetPercentage = db.prepare('SELECT value FROM settings WHERE key = ?').get('maxBetPercentage')?.value || '5';
-    const pointClaimInterval = db.prepare('SELECT value FROM settings WHERE key = ?').get('pointClaimInterval')?.value || '300';
-
-    res.json({
-      twitchClientId,
-      concurrentStreams,
-      dropAllocation,
-      bettingEnabled,
-      maxBetPercentage,
-      pointClaimInterval
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/api/settings', (req, res) => {
-  try {
-    const { twitchClientId, concurrentStreams, dropAllocation } = req.body;
-
-    const insert = db.prepare(`
-      INSERT INTO settings (key, value) VALUES (?, ?)
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value
-    `);
-
-    if (twitchClientId !== undefined) {
-      insert.run('twitchClientId', twitchClientId);
-    }
-    if (concurrentStreams !== undefined) {
-      insert.run('concurrentStreams', concurrentStreams.toString());
-    }
-    if (dropAllocation !== undefined) {
-      insert.run('dropAllocation', dropAllocation.toString());
-    }
-
-    res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// POST /api/auth/device - Initiate Twitch Device Authorization Flow
-app.post('/api/auth/device', async (req, res) => {
-  try {
-    const twitchClientId = db.prepare('SELECT value FROM settings WHERE key = ?').get('twitchClientId')?.value;
-
-    if (!twitchClientId) {
-      return res.status(400).json({ error: 'Twitch Client ID is not configured. Please add it in Settings.' });
-    }
-
-    // Call Twitch Device Authorization endpoint
-    const response = await fetch('https://id.twitch.tv/oauth2/device', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        client_id: twitchClientId,
-        scopes: 'user:read:email chat:read chat:edit channel:read:subscriptions'
-      })
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error('Twitch Device Auth Error:', errorData);
-      return res.status(500).json({ error: 'Failed to initiate device authorization. Please check your Client ID.' });
-    }
-
-    const data = await response.json();
-
-    // Debug logging
-    console.log('[AUTH POLL] Twitch response status:', response.status, 'OK:', response.ok);
-    console.log('[AUTH POLL] Twitch response data:', JSON.stringify(data, null, 2));
-
-    res.json({
-      user_code: data.user_code,
-      device_code: data.device_code,
-      verification_uri: data.verification_uri,
-      verification_uri_complete: data.verification_uri_complete,
-      expires_in: data.expires_in,
-      interval: data.interval || 5
-    });
-  } catch (error: any) {
-    console.error('Device auth error:', error);
-    res.status(500).json({ error: 'Failed to initiate device authorization: ' + error.message });
-  }
-});
-
-// POST /api/auth/poll - Poll for device authorization completion
-app.post('/api/auth/poll', async (req, res) => {
-  try {
-    const { device_code } = req.body;
-
-    if (!device_code) {
-      return res.status(400).json({ error: 'device_code is required' });
-    }
-
-    const twitchClientId = db.prepare('SELECT value FROM settings WHERE key = ?').get('twitchClientId')?.value;
-
-    if (!twitchClientId) {
-      return res.status(400).json({ error: 'Twitch Client ID is not configured' });
-    }
-
-    // Poll Twitch Token endpoint
-    const response = await fetch('https://id.twitch.tv/oauth2/token', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        client_id: twitchClientId,
-        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
-        device_code: device_code
-      })
-    });
-
-    const data = await response.json();
-
-    // Debug logging
-    console.log('[AUTH POLL] Twitch response status:', response.status, 'OK:', response.ok);
-    console.log('[AUTH POLL] Twitch response data:', JSON.stringify(data, null, 2));
-
-    if (response.ok && data.access_token) {
-      // Get user info with access token
-      const userResponse = await fetch('https://api.twitch.tv/helix/users', {
-        headers: {
-          'Authorization': 'Bearer ' + data.access_token,
-          'Client-Id': twitchClientId
-        }
-      });
-
-      if (!userResponse.ok) {
-        return res.status(500).json({ error: 'Failed to get user info' });
-      }
-
-      const userData = await userResponse.json();
-      const username = userData.data[0].login;
-      const userId = userData.data[0].id;
-
-      // Check if account already exists
-      const existing = db.prepare('SELECT id FROM accounts WHERE user_id = ?').get(userId);
-
-      if (existing) {
-        // Update existing account
-        db.prepare(`
-          UPDATE accounts SET 
-            accessToken = ?, 
-            refreshToken = ?, 
-            status = 'farming',
-            createdAt = datetime('now')
-          WHERE user_id = ?
-        `).run(data.access_token, data.refresh_token || '', userId);
-      } else {
-        // Create new account
-        db.prepare(`
-          INSERT INTO accounts (username, user_id, accessToken, refreshToken, status)
-          VALUES (?, ?, ?, ?, 'farming')
-        `).run(username, userId, data.access_token, data.refresh_token || '');
-      }
-
-      res.json({
-        status: 'success',
-        username: username,
-        user_id: userId
-      });
-    } else if (data.error === 'authorization_pending') {
-      res.json({ status: 'pending' });
-    } else if (data.error === 'slow_down') {
-      res.json({ status: 'slow_down' });
-    } else if (data.error === 'expired_token') {
-      res.json({
-        status: 'error',
-        error: 'Device code has expired. Please start over and complete authentication within 30 minutes.'
-      });
-    } else if (data.error === 'invalid_device') {
-      res.json({
-        status: 'error',
-        error: 'Invalid device code. Please try adding your account again.'
-      });
-    } else {
-      // Log unknown errors for debugging
-      console.error('[AUTH POLL] Unknown error from Twitch:', data);
-      res.json({
-        status: 'error',
-        error: data.error || 'Authorization failed'
-      });
-    }
-  } catch (error: any) {
-    console.error('Auth poll error:', error);
-    res.status(500).json({ error: 'Failed to poll authorization status: ' + error.message });
-  }
-});
-
-app.post('/api/settings/betting', (req, res) => {
-  try {
-    const { enabled, maxBetPercentage } = req.body;
-    
-    db.prepare(`
-      INSERT OR REPLACE INTO settings (key, value)
-      VALUES ('bettingEnabled', ?)
-    `).run(enabled ? '1' : '0');
-    
-    db.prepare(`
-      INSERT OR REPLACE INTO settings (key, value)
-      VALUES ('maxBetPercentage', ?)
-    `).run(maxBetPercentage.toString());
-    
-    bettingEngine.setEnabled(enabled);
-    
-    res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.get('/api/betting/stats', (req, res) => {
-  try {
-    const stats = db.prepare(`
-      SELECT streamer, totalBets, wins, totalProfit,
-             CAST(wins AS REAL) / totalBets as winRate
-      FROM betting_stats
-      WHERE totalBets > 0
-      ORDER BY totalProfit DESC
-    `).all();
-    res.json(stats);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.get('/api/drops/campaigns', async (req, res) => {
-  try {
-    const campaigns = await dropScrapingService.scrapeDropCampaigns();
-    res.json(campaigns);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    features: {
-      pointClaiming: pointClaimingService.isEnabled(),
-      dropScraping: dropScrapingService.isEnabled(),
-      betting: true,
-      websocket: true
-    }
-  });
-});
-
-// Scheduled tasks
-cron.schedule('*/5 * * * *', async () => {
-  console.log('[SYSTEM] Running scheduled point claim task...');
-  try {
-    const accounts = db.prepare("SELECT id FROM accounts WHERE status = 'farming'").all() as any[];
-    for (const account of accounts) {
-      await pointClaimingService.watchAndClaim(account.id);
-    }
-  } catch (error) {
-    console.error('Error in scheduled point claim:', error);
-  }
-});
-
-cron.schedule('*/30 * * * *', async () => {
-  console.log('[SYSTEM] Scraping drop campaigns...');
-  try {
-    await dropScrapingService.scrapeDropCampaigns();
-  } catch (error) {
-    console.error('Error scraping drops:', error);
-  }
-});
-
-cron.schedule('0 0 * * *', () => {
-  console.log('[SYSTEM] Running daily log cleanup...');
-  try {
-    db.prepare("DELETE FROM logs WHERE time < datetime('now', '-30 days')").run();
-    db.prepare(`DELETE FROM logs WHERE id < (
-      SELECT id FROM logs ORDER BY id DESC LIMIT 1 OFFSET 10000
-    )`).run();
-  } catch (error) {
-    console.error('Error cleaning up logs:', error);
-  }
-});
-
-// SPA fallback
-// GET /api/logs - Get system logs
-app.get('/api/logs', (req, res) => {
-  try {
-    const logs = db.prepare(`
-      SELECT * FROM logs
-      ORDER BY time DESC
-      LIMIT 100
-    `).all();
-    res.json(logs);
-  } catch (error: any) {
-    // If logs table doesn't exist, return empty array
-    res.json([]);
-  }
-});
-
-// GET /api/campaigns - Get all drop campaigns
-app.get('/api/campaigns', (req, res) => {
-  try {
-    const campaigns = db.prepare(`
-      SELECT * FROM drop_campaigns
-      ORDER BY status ASC, end_time DESC
-    `).all();
-    res.json(campaigns);
-  } catch (error: any) {
-    res.json([]);
-  }
-});
-
-// GET /api/games - Get all games with drops
-app.get('/api/games', (req, res) => {
-  try {
-    const games = db.prepare(`
-      SELECT 
-        id,
-        name,
-        last_drop as lastDrop,
-        whitelisted,
-        (SELECT COUNT(*) FROM drop_campaigns WHERE drop_campaigns.game = games.name) as activeCampaigns
-      FROM games
-      ORDER BY last_drop DESC NULLS LAST
-    `).all();
-    res.json(games);
-  } catch (error: any) {
-    res.json([]);
-  }
-});
-
-// POST /api/games/:id/toggle - Toggle game whitelisting
-app.post('/api/games/:id/toggle', (req, res) => {
-  try {
-    const { id } = req.params;
-
-    // Get current whitelisted status
-    const game = db.prepare('SELECT whitelisted FROM games WHERE id = ?').get(id);
-    if (!game) {
-      return res.status(404).json({ error: 'Game not found' });
-    }
-
-    // Toggle status
-    const newStatus = game.whitelisted === 1 ? 0 : 1;
-    db.prepare('UPDATE games SET whitelisted = ? WHERE id = ?').run(newStatus, id);
-
-    res.json({ success: true, whitelisted: newStatus });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.get('*', (req, res) => {
-  res.sendFile('dist/index.html', { root: '.' });
-});
-
-// Start server
-server.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-  console.log('Mode: production');
-});
-
-// Graceful shutdown
-process.on('SIGINT', async () => {
-  console.log('\nShutting down gracefully...');
-  await pointClaimingService.stop();
-  await dropScrapingService.stop();
-  server.close();
-  process.exit(0);
-});
