@@ -156,9 +156,6 @@ const bettingEngine = new BettingEngine(db);
 // Initialize all services
 await pointClaimingService.initialize();
 await dropScrapingService.initialize();
-webSocketService.initialize();
-multiAccountCoordinator.initialize();
-backupService.initialize();
 bettingEngine.initialize();
 
 console.log('Enhanced features loaded: Point Claiming, Betting Engine, 20/80 Allocation');
