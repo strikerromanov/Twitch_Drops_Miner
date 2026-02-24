@@ -35,7 +35,8 @@ const createTables = () => {
       refreshToken TEXT,
       status TEXT DEFAULT 'idle',
       createdAt TEXT DEFAULT (datetime('now')),
-      lastActive TEXT
+      lastActive TEXT,
+      user_id TEXT
     );
     
     CREATE TABLE IF NOT EXISTS followed_channels (
@@ -177,6 +178,33 @@ try {
 }
 
   // Check if accounts has user_id column
+  // Check if followed_channels has all required columns
+  try {
+    const followedColumns = db.prepare("PRAGMA table_info(followed_channels)").all();
+    const columnNames = followedColumns.map((c: any) => c.name);
+    
+    if (!columnNames.includes('streamer_id')) {
+      console.log('🔧 Adding streamer_id column to followed_channels...');
+      db.prepare('ALTER TABLE followed_channels ADD COLUMN streamer_id TEXT').run();
+      console.log('✅ Migration: streamer_id column added');
+    }
+    
+    if (!columnNames.includes('game_name')) {
+      console.log('🔧 Adding game_name column to followed_channels...');
+      db.prepare('ALTER TABLE followed_channels ADD COLUMN game_name TEXT').run();
+      console.log('✅ Migration: game_name column added');
+    }
+    
+    if (!columnNames.includes('bets')) {
+      console.log('🔧 Adding bets column to followed_channels...');
+      db.prepare('ALTER TABLE followed_channels ADD COLUMN bets INTEGER DEFAULT 0').run();
+      console.log('✅ Migration: bets column added');
+    }
+  } catch (error: any) {
+    console.log('Followed channels migration check completed:', error.message);
+  }
+
+
   try {
     const accountsColumns = db.prepare("PRAGMA table_info(accounts)").all();
     const hasUserId = accountsColumns.some((col: any) => col.name === 'user_id');
