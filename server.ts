@@ -263,6 +263,285 @@ const dropScrapingService = new DropScrapingService(db);
       const clientId = settings.find(s => s.key === 'twitchClientId')?.value || '';
       
       // Dynamic imports to avoid module format issues
+// API Routes for Twitch Drops Miner
+// Add these routes to server.ts before server.listen()
+
+// ===== SETTINGS ROUTES =====
+app.get('/api/settings', (req, res) => {
+  try {
+    const settings = db.prepare('SELECT * FROM settings').all();
+    const settingsObj: Record<string, string> = {};
+    settings.forEach((s: any) => {
+      settingsObj[s.key] = s.value;
+    });
+    res.json(settingsObj);
+  } catch (error) {
+    console.error('Error fetching settings:', error);
+    res.status(500).json({ error: 'Failed to fetch settings' });
+  }
+});
+
+app.post('/api/settings', (req, res) => {
+  try {
+    const { key, value } = req.body;
+    if (!key || value === undefined) {
+      return res.status(400).json({ error: 'Key and value required' });
+    }
+    
+    const existing = db.prepare('SELECT * FROM settings WHERE key = ?').get(key);
+    if (existing) {
+      db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(value, key);
+    } else {
+      db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run(key, value);
+    }
+    
+    res.json({ success: true, key, value });
+  } catch (error) {
+    console.error('Error saving setting:', error);
+    res.status(500).json({ error: 'Failed to save setting' });
+  }
+});
+
+app.get('/api/settings/betting', (req, res) => {
+  try {
+    const settings = db.prepare('SELECT * FROM settings WHERE key LIKE "betting_%"').all();
+    const settingsObj: Record<string, string> = {};
+    settings.forEach((s: any) => {
+      settingsObj[s.key] = s.value;
+    });
+    res.json(settingsObj);
+  } catch (error) {
+    console.error('Error fetching betting settings:', error);
+    res.status(500).json({ error: 'Failed to fetch betting settings' });
+  }
+});
+
+app.post('/api/settings/betting', (req, res) => {
+  try {
+    const updates = req.body;
+    Object.entries(updates).forEach(([key, value]) => {
+      const existing = db.prepare('SELECT * FROM settings WHERE key = ?').get(key);
+      if (existing) {
+        db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(value, key);
+      } else {
+        db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run(key, value);
+      }
+    });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error saving betting settings:', error);
+    res.status(500).json({ error: 'Failed to save betting settings' });
+  }
+});
+
+// ===== ACCOUNT ROUTES =====
+app.get('/api/accounts', (req, res) => {
+  try {
+    const accounts = db.prepare('SELECT id, username, status, createdAt, lastActive, user_id FROM accounts').all();
+    res.json(accounts);
+  } catch (error) {
+    console.error('Error fetching accounts:', error);
+    res.status(500).json({ error: 'Failed to fetch accounts' });
+  }
+});
+
+app.post('/api/accounts/:id/toggle', (req, res) => {
+  try {
+    const { id } = req.params;
+    const account = db.prepare('SELECT status FROM accounts WHERE id = ?').get(id);
+    if (!account) {
+      return res.status(404).json({ error: 'Account not found' });
+    }
+    
+    const newStatus = account.status === 'farming' ? 'idle' : 'farming';
+    db.prepare('UPDATE accounts SET status = ?, lastActive = datetime("now") WHERE id = ?').run(newStatus, id);
+    
+    res.json({ success: true, status: newStatus });
+  } catch (error) {
+    console.error('Error toggling account:', error);
+    res.status(500).json({ error: 'Failed to toggle account' });
+  }
+});
+
+app.delete('/api/accounts/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    db.prepare('DELETE FROM accounts WHERE id = ?').run(id);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting account:', error);
+    res.status(500).json({ error: 'Failed to delete account' });
+  }
+});
+
+// ===== CAMPAIGNS ROUTES =====
+app.get('/api/campaigns', (req, res) => {
+  try {
+    const campaigns = db.prepare('SELECT * FROM drop_campaigns ORDER BY createdAt DESC').all();
+    res.json(campaigns);
+  } catch (error) {
+    console.error('Error fetching campaigns:', error);
+    res.status(500).json({ error: 'Failed to fetch campaigns' });
+  }
+});
+
+// ===== GAMES ROUTES =====
+app.get('/api/games', (req, res) => {
+  try {
+    const games = db.prepare('SELECT * FROM games ORDER BY name').all();
+    res.json(games);
+  } catch (error) {
+    console.error('Error fetching games:', error);
+    res.status(500).json({ error: 'Failed to fetch games' });
+  }
+});
+
+app.post('/api/games/:id/toggle', (req, res) => {
+  try {
+    const { id } = req.params;
+    const game = db.prepare('SELECT enabled FROM games WHERE id = ?').get(id);
+    if (!game) {
+      return res.status(404).json({ error: 'Game not found' });
+    }
+    
+    const newEnabled = game.enabled ? 0 : 1;
+    db.prepare('UPDATE games SET enabled = ? WHERE id = ?').run(newEnabled, id);
+    
+    res.json({ success: true, enabled: !!newEnabled });
+  } catch (error) {
+    console.error('Error toggling game:', error);
+    res.status(500).json({ error: 'Failed to toggle game' });
+  }
+});
+
+// ===== LOGS ROUTES =====
+app.get('/api/logs', (req, res) => {
+  try {
+    const { accountId, streamer } = req.query;
+    let query = 'SELECT * FROM logs';
+    const params: any[] = [];
+    
+    if (accountId) {
+      query += ' WHERE accountId = ?';
+      params.push(accountId);
+      
+      if (streamer) {
+        query += ' AND streamer = ?';
+        params.push(streamer);
+      }
+    }
+    
+    query += ' ORDER BY time DESC LIMIT 100';
+    const logs = db.prepare(query).all(...params);
+    res.json(logs);
+  } catch (error) {
+    console.error('Error fetching logs:', error);
+    res.status(500).json({ error: 'Failed to fetch logs' });
+  }
+});
+
+// ===== AUTH ROUTES =====
+app.post('/api/auth/device', async (req, res) => {
+  try {
+    // This would trigger Twitch device auth flow
+    // For now, return a placeholder response
+    res.json({ 
+      success: true,
+      message: 'Device auth initiated',
+      userCode: 'PLACEHOLDER',
+      verificationUri: 'https://www.twitch.tv/activate'
+    });
+  } catch (error) {
+    console.error('Error initiating device auth:', error);
+    res.status(500).json({ error: 'Failed to initiate device auth' });
+  }
+});
+
+app.post('/api/auth/poll', async (req, res) => {
+  try {
+    const { userCode } = req.body;
+    // This would poll Twitch for auth completion
+    // For now, return a placeholder response
+    res.json({ 
+      success: false,
+      message: 'Auth not implemented yet',
+      pending: true
+    });
+  } catch (error) {
+    console.error('Error polling auth:', error);
+    res.status(500).json({ error: 'Failed to poll auth status' });
+  }
+});
+
+// ===== FACTORY RESET =====
+app.post('/api/factory-reset', (req, res) => {
+  try {
+    // Reset all settings to defaults
+    db.prepare('DELETE FROM settings').run();
+    
+    // Set default settings
+    const defaults = [
+      { key: 'twitchClientId', value: '' },
+      { key: 'refreshInterval', value: '600000' },
+      { key: 'maxAccounts', value: '5' },
+      { key: 'betting_enabled', value: 'false' },
+      { key: 'betting_strategy', value: 'conservative' }
+    ];
+    
+    defaults.forEach(setting => {
+      db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run(setting.key, setting.value);
+    });
+    
+    // Clear all accounts
+    db.prepare('DELETE FROM accounts').run();
+    
+    res.json({ success: true, message: 'Factory reset completed' });
+  } catch (error) {
+    console.error('Error performing factory reset:', error);
+    res.status(500).json({ error: 'Failed to perform factory reset' });
+  }
+});
+
+// ===== BETTING STATS =====
+app.get('/api/betting-stats', (req, res) => {
+  try {
+    const stats = db.prepare(`
+      SELECT 
+        COUNT(*) as totalBets,
+        SUM(CASE WHEN outcome = 'won' THEN 1 ELSE 0 END) as wins,
+        SUM(CASE WHEN outcome = 'lost' THEN 1 ELSE 0 END) as losses,
+        SUM(amount) as totalWagered
+      FROM betting_history
+    `).get();
+    res.json(stats || { totalBets: 0, wins: 0, losses: 0, totalWagered: 0 });
+  } catch (error) {
+    console.error('Error fetching betting stats:', error);
+    res.status(500).json({ error: 'Failed to fetch betting stats' });
+  }
+});
+
+// ===== STREAMER ANALYSIS =====
+app.get('/api/streamer-analysis', (req, res) => {
+  try {
+    const analysis = db.prepare(`
+      SELECT
+        streamer_id as streamer,
+        COUNT(*) as pointsClaimed,
+        AVG(CAST(message AS INTEGER)) as avgPoints,
+        MAX(time) as lastClaimed
+      FROM logs
+      WHERE type = 'points_claimed' AND time > datetime('now', '-7 days')
+      GROUP BY streamer_id
+      ORDER BY pointsClaimed DESC
+    `).all();
+    res.json(analysis);
+  } catch (error) {
+    console.error('Error fetching streamer analysis:', error);
+    res.status(500).json({ error: 'Failed to fetch streamer analysis' });
+  }
+});
+
+console.log('✅ API routes registered');
       const { default: Dropboxer } = await import('./drop-indexer.ts');
       const { default: ChatFarmingService } = await import('./chat-farming.ts');
       const { default: FollowedChannelsIndexer } = await import('./followed-channels-indexer.ts');
