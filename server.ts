@@ -291,3 +291,21 @@ const dropScrapingService = new DropScrapingService(db);
   })();
 
 
+
+// Start the HTTP server
+server.listen(PORT, () => {
+  console.log(`🚀 Server is running on port ${PORT}`);
+  console.log(`📡 WebSocket server ready`);
+  console.log(`🎯 API available at http://localhost:${PORT}/api`);
+});
+
+// Graceful shutdown
+process.on('SIGINT', () => {
+  console.log('\n🛑 Shutting down server...');
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  console.log('\n🛑 Received SIGTERM, shutting down...');
+  process.exit(0);
+});
