@@ -263,9 +263,9 @@ const dropScrapingService = new DropScrapingService(db);
       const clientId = settings.find(s => s.key === 'twitchClientId')?.value || '';
       
       // Dynamic imports to avoid module format issues
-      const { default: Dropboxer } = await import('./drop-indexer.js');
-      const { default: ChatFarmingService } = await import('./chat-farming.js');
-      const { default: FollowedChannelsIndexer } = await import('./followed-channels-indexer.js');
+      const { default: Dropboxer } = await import('./drop-indexer.ts');
+      const { default: ChatFarmingService } = await import('./chat-farming.ts');
+      const { default: FollowedChannelsIndexer } = await import('./followed-channels-indexer.ts');
       
       const dropIndexer = new Dropboxer(db, clientId);
       const chatFarming = new ChatFarmingService(db);
