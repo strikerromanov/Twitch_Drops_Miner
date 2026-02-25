@@ -1,0 +1,54 @@
+name: Latest Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  latest-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get current date
+        id: date
+        run: echo "date=$(date +'%Y-%m-%d %H:%M:%S')" >> $GITHUB_OUTPUT
+
+      - name: Create/Update Latest Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: latest
+          name: Latest Release
+          body: |
+            ## 🚀 Latest Build
+            
+            **Updated:** ${{ steps.date.outputs.date }}
+            
+            ### Docker Image
+            ```bash
+            docker pull strikerromanov/twitch-drops-miner:latest
+            ```
+            
+            ### Quick Start
+            ```bash
+            docker run -d \
+              -e TWITCH_USERNAME=your_username \
+              -e TWITCH_PASSWORD=your_password \
+              -v $(pwd)/data:/app/data \
+              strikerromanov/twitch-drops-miner:latest
+            ```
+            
+            ---
+            
+            ### Recent Changes
+            See [Commits](https://github.com/strikerromanov/Twitch_Drops_Miner/commits/main) for latest updates.
+          draft: false
+          prerelease: false
+          target_commitish: ${{ github.sha }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
