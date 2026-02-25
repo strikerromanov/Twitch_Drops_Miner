@@ -69,6 +69,10 @@ COPY --from=builder /app/websocket-server.ts ./
 COPY --from=builder /app/multi-account-coordinator.ts ./
 COPY --from=builder /app/backup-service.ts ./
 
+COPY --from=builder /app/drop-indexer.ts ./
+COPY --from=builder /app/followed-channels-indexer.ts ./
+COPY --from=builder /app/task-runner.ts ./
+
 # Copy Playwright browsers and cache from builder
 COPY --from=builder /root/.cache/ms-playwright /root/.cache/ms-playwright
 
