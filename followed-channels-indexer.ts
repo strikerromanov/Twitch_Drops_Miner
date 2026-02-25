@@ -1,4 +1,3 @@
-
 import fetch from 'node-fetch';
 import { Database } from 'better-sqlite3';
 
@@ -56,12 +55,14 @@ class FollowedChannelsIndexer {
 
       // Save to database
       let added = 0;
+      let updated = 0;
       for (const channel of follows) {
         try {
           // Check if channel already exists
           const existing = this.db.prepare('SELECT id FROM followed_channels WHERE account_id = ? AND streamer = ?').get(accountId, channel.broadcaster_name);
 
           if (!existing) {
+            // INSERT new channel
             this.db.prepare(`
               INSERT INTO followed_channels (account_id, streamer, streamer_id, game_name, status, points, viewer_count)
               VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -75,20 +76,34 @@ class FollowedChannelsIndexer {
               0
             );
             added++;
+          } else {
+            // UPDATE existing channel with fresh data
+            this.db.prepare(`
+              UPDATE followed_channels 
+              SET streamer_id = ?, game_name = ?, status = ? 
+              WHERE account_id = ? AND streamer = ?
+            `).run(
+              channel.broadcaster_id,
+              channel.game_name || 'Unknown',
+              channel.is_live ? 'favorite' : null,
+              accountId,
+              channel.broadcaster_name
+            );
+            updated++;
           }
         } catch (err) {
           console.error('[FOLLOWED INDEXER] Failed to save channel:', err);
         }
       }
 
-      this.logActivity(accountId, 'info', `Indexed ${follows.length} channels, added ${added} new`);
-      console.log(`[FOLLOWED INDEXER] Completed for ${account.username}: ${added} new channels`);
+      this.logActivity(accountId, 'info', `Indexed ${follows.length} channels, added ${added} new, updated ${updated} existing`);
+      console.log(`[FOLLOWED INDEXER] Completed for ${account.username}: ${added} new, ${updated} updated`);
 
-      return { total: follows.length, added };
+      return { total: follows.length, added, updated };
     } catch (error: any) {
       console.error(`[FOLLOWED INDEXER] Error indexing account ${accountId}:`, error);
       this.logActivity(accountId, 'error', `Indexing failed: ${error.message}`);
-      return { total: 0, added: 0 };
+      return { total: 0, added: 0, updated: 0 };
     }
   }
 

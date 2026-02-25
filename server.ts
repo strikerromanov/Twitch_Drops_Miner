@@ -192,7 +192,7 @@ try {
     if (!err.message.includes('duplicate column')) {
       console.error('Failed to add type column:', err.message);
     }
-  }');
+  }
   }
   
   db.prepare('UPDATE followed_channels SET viewer_count = 0 WHERE viewer_count IS NULL').run();
