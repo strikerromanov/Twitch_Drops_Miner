@@ -1,0 +1,49 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.version.outputs.VERSION }}
+          release_name: Release ${{ steps.version.outputs.VERSION }}
+          body: |
+            ## Changes in ${{ steps.version.outputs.VERSION }}
+            
+            ### 🎉 New Features
+            - Add new features here
+            
+            ### 🐛 Bug Fixes
+            - Add bug fixes here
+            
+            ### 🔧 Improvements
+            - Add improvements here
+            
+            ### 📦 Docker Image
+            ```bash
+            docker pull strikerromanov/twitch-drops-miner:${{ steps.version.outputs.VERSION }}
+            docker pull strikerromanov/twitch-drops-miner:latest
+            ```
+            
+            Full changelog: https://github.com/${{ github.repository }}/commits/${{ steps.version.outputs.VERSION }}
+          draft: false
+          prerelease: false
