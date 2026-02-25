@@ -13,21 +13,30 @@ export const ToastContext = createContext<any>(null);
 export const useToast = () => useContext(ToastContext);
 
 
-class ErrorBoundary extends React.Component<any, any> {
-  constructor(props: any) {
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+interface ErrorBoundaryProps {
+  children?: React.ReactNode;
+}
+
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, error: null };
   }
 
-  static getDerivedStateFromError(error: any) {
+  static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: any, errorInfo: any) {
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
     console.error('Error caught by boundary:', error, errorInfo);
   }
 
-  render() {
+  render(): React.ReactNode {
     if (this.state.hasError) {
       return (
         <div className="flex items-center justify-center h-screen bg-[#09090b] text-[#fafafa]">
@@ -35,7 +44,7 @@ class ErrorBoundary extends React.Component<any, any> {
             <h1 className="text-2xl font-semibold mb-2">Something went wrong</h1>
             <p className="text-[#a1a1aa] mb-4">An error occurred while loading this page.</p>
             <button
-              onClick={() => this.setState({ hasError: false })}
+              onClick={() => this.setState({ hasError: false, error: null })}
               className="px-4 py-2 bg-[#9146FF] hover:bg-[#772ce8] rounded-lg"
             >
               Try Again
@@ -49,6 +58,7 @@ class ErrorBoundary extends React.Component<any, any> {
     return this.props.children;
   }
 }
+
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');

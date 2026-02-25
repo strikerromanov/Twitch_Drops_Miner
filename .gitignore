@@ -47,3 +47,4 @@ Thumbs.db
 # Test and temporary files
 fix_database.js
 twitch-icon.png.txt
+data/*.db*

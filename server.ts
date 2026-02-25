@@ -163,11 +163,11 @@ const createTables = () => {
 createTables();
 
 // NOW run migrations AFTER tables exist
-console.log('Running database migrations...');
+// NOW run migrations AFTER tables exist
+
 try {
   const columnCheck = db.prepare("PRAGMA table_info(followed_channels)").all();
   const hasViewerCount = columnCheck.some((col: any) => col.name === 'viewer_count');
-  
   if (!hasViewerCount) {
     console.log('🔧 Adding viewer_count column to followed_channels...');
     db.prepare('ALTER TABLE followed_channels ADD COLUMN viewer_count INTEGER DEFAULT 0').run();
@@ -184,7 +184,6 @@ try {
       console.error('Failed to add streamer_id column:', err.message);
     }
   }
-
   try {
     db.prepare('ALTER TABLE logs ADD COLUMN type TEXT').run();
     console.log('✅ Added type column to logs table');
@@ -193,31 +192,20 @@ try {
       console.error('Failed to add type column:', err.message);
     }
   }
-  }
-  
-  db.prepare('UPDATE followed_channels SET viewer_count = 0 WHERE viewer_count IS NULL').run();
-} catch (error: any) {
-  console.log('Migration check completed:', error.message);
-}
-
-  // Check if accounts has user_id column
   // Check if followed_channels has all required columns
   try {
     const followedColumns = db.prepare("PRAGMA table_info(followed_channels)").all();
     const columnNames = followedColumns.map((c: any) => c.name);
-    
     if (!columnNames.includes('streamer_id')) {
       console.log('🔧 Adding streamer_id column to followed_channels...');
       db.prepare('ALTER TABLE followed_channels ADD COLUMN streamer_id TEXT').run();
       console.log('✅ Migration: streamer_id column added');
     }
-    
     if (!columnNames.includes('game_name')) {
       console.log('🔧 Adding game_name column to followed_channels...');
       db.prepare('ALTER TABLE followed_channels ADD COLUMN game_name TEXT').run();
       console.log('✅ Migration: game_name column added');
     }
-    
     if (!columnNames.includes('bets')) {
       console.log('🔧 Adding bets column to followed_channels...');
       db.prepare('ALTER TABLE followed_channels ADD COLUMN bets INTEGER DEFAULT 0').run();
@@ -226,8 +214,7 @@ try {
   } catch (error: any) {
     console.log('Followed channels migration check completed:', error.message);
   }
-
-
+  // Check if accounts has user_id column
   try {
     const accountsColumns = db.prepare("PRAGMA table_info(accounts)").all();
     const hasUserId = accountsColumns.some((col: any) => col.name === 'user_id');
@@ -241,6 +228,10 @@ try {
   } catch (error: any) {
     console.log('Migration check completed:', error.message);
   }
+} catch (err: any) {
+  console.error('Database migration error:', err.message);
+}
+
 
   // Check if active_streams has viewer_count column
   try {
