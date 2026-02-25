@@ -2,14 +2,11 @@ version: '3.8'
 
 services:
   twitch-drops-miner:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: docker.io/strikerromanov/twitch-drops-miner:latest
     container_name: twitch-drops-miner
-    image: twitch-drops-miner:latest
     restart: unless-stopped
     ports:
-      - "5173:3000"  # Map external port 5173 to internal port 3000
+      - "3000:3000"  # Production mode: map external port 3000 to internal port 3000
     environment:
       - NODE_ENV=production
       - PORT=3000
@@ -25,10 +22,10 @@ services:
       retries: 3
       start_period: 5s
     labels:
-      - "com.twitchdropsminer.description=Twitch Drops and Points Farming Bot"
+      - "com.twitchdropsminer.description=Twitch Drops and Points Farming Bot - Production Mode"
       - "com.twitchdropsminer.version=1.0.0"
       - "net.unraid.docker.managed=dockerman"
-      - "net.unraid.docker.icon=https://raw.githubusercontent.com/strikerromanov/Twitch_Drops_Miner/main/icon.png"
+      - "net.unraid.docker.icon=https://raw.githubusercontent.com/strikerromanov/Twitch_Drops_Miner/main/twitch-icon.png"
     networks:
       - twitch-network
 

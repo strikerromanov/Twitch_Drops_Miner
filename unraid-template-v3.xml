@@ -10,10 +10,10 @@
   <Privileged>false</Privileged>
   <Support>https://github.com/strikerromanov/Twitch_Drops_Miner/issues</Support>
   <Project>https://github.com/strikerromanov/Twitch_Drops_Miner</Project>
-  <Overview>Twitch Drops Miner v3 - Latest version with all enhancements! Automatically farm channel points, place algorithmic bets with Kelly Criterion, track drop campaigns, and coordinate multiple accounts. Features include real-time point claiming via Playwright, WebSocket updates, 20/80 allocation, and comprehensive risk mitigation. Auto-updates when new code is pushed to GitHub.</Overview>
+  <Overview>Twitch Drops Miner v3 (Production Mode) - Latest production version with all enhancements! Automatically farm channel points, place algorithmic bets with Kelly Criterion, track drop campaigns, and coordinate multiple accounts. Features include real-time point claiming via Playwright, WebSocket updates, 20/80 allocation, and comprehensive risk mitigation. Runs on port 3000 in production mode. Auto-updates when new code is pushed to GitHub.</Overview>
   <Category>Tools:</Category>
   <WebUI>http://[IP]:[PORT:3000]/</WebUI>
-  <TemplateURL>https://raw.githubusercontent.com/strikerromanov/Twitch_Drops_Miner/main/unraid-template.xml</TemplateURL>
+  <TemplateURL>https://raw.githubusercontent.com/strikerromanov/Twitch_Drops_Miner/main/unraid-template-v3.xml</TemplateURL>
   <Icon>https://raw.githubusercontent.com/strikerromanov/Twitch_Drops_Miner/main/twitch-icon.png</Icon>
   <ExtraParams>--restart unless-stopped</ExtraParams>
   <PostArgs/>
@@ -22,7 +22,9 @@
   <DonateText/>
   <DonateLink/>
   <Requires/>
-  <Config Name="WebUI Port" Target="3000" Default="5173" Mode="tcp" Description="Container Port: 3000" Type="Port" Display="always" Required="true" Mask="false">5173</Config>
+  <Config Name="WebUI Port" Target="3000" Default="3000" Mode="tcp" Description="Container Port: 3000 (Production Mode)" Type="Port" Display="always" Required="true" Mask="false">3000</Config>
   <Config Name="Data Directory" Target="/app/data" Default="/mnt/user/appdata/twitch-drops-miner-v3" Mode="rw" Description="Database and persistent data" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/twitch-drops-miner-v3</Config>
   <Config Name="TZ" Target="TZ" Default="" Mode="" Description="Timezone" Type="Variable" Display="advanced-hide" Required="false" Mask="false">Europe/Budapest</Config>
+  <Config Name="Node Environment" Target="NODE_ENV" Default="production" Mode="" Description="Application mode" Type="Variable" Display="advanced" Required="false" Mask="false">production</Config>
+  <Config Name="Server Port" Target="PORT" Default="3000" Mode="" Description="Internal server port" Type="Variable" Display="advanced" Required="false" Mask="false">3000</Config>
 </Container>
