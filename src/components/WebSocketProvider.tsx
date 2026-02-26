@@ -1,19 +1,17 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 
 interface WebSocketContextType {
+  ws: WebSocket | null;
   connected: boolean;
-  stats: any;
-  recentClaims: any[];
-  activeStreams: any[];
-  recentBets: any[];
+  messages: any[];
+  sendMessage: (data: any) => void;
 }
 
 const WebSocketContext = createContext<WebSocketContextType>({
+  ws: null,
   connected: false,
-  stats: null,
-  recentClaims: [],
-  activeStreams: [],
-  recentBets: []
+  messages: [],
+  sendMessage: () => {}
 });
 
 export const useWebSocket = () => useContext(WebSocketContext);
@@ -25,89 +23,75 @@ interface WebSocketProviderProps {
 export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({ children }) => {
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [connected, setConnected] = useState(false);
-  const [stats, setStats] = useState(null);
-  const [recentClaims, setRecentClaims] = useState([]);
-  const [activeStreams, setActiveStreams] = useState([]);
-  const [recentBets, setRecentBets] = useState([]);
+  const [messages, setMessages] = useState<any[]>([]);
+  const [reconnectAttempts, setReconnectAttempts] = useState(0);
+
+  const maxReconnectAttempts = 5;
+  const reconnectDelay = 3000;
 
   useEffect(() => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
-    
-    console.log('Connecting to WebSocket:', wsUrl);
-    const websocket = new WebSocket(wsUrl);
+    const connect = () => {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.host;
+      const wsUrl = `${protocol}//${host}/ws`;
 
-    websocket.onopen = () => {
-      console.log('WebSocket connected');
-      setConnected(true);
-      setWs(websocket);
-    };
+      console.log('WebSocket connecting to:', wsUrl);
+      const socket = new WebSocket(wsUrl);
 
-    websocket.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data);
-        console.log('WebSocket message:', message.type);
+      socket.onopen = () => {
+        console.log('WebSocket connected');
+        setConnected(true);
+        setReconnectAttempts(0);
+      };
 
-        switch (message.type) {
-          case 'initial':
-            setStats(message.data.stats);
-            setRecentClaims(message.data.recentClaims);
-            setActiveStreams(message.data.activeStreams);
-            break;
-          case 'update':
-            if (message.data) {
-              setStats(message.data.stats);
-              if (message.data.recentClaims?.length > 0) {
-                setRecentClaims(prev => [...message.data.recentClaims, ...prev].slice(0, 20));
-              }
-              setActiveStreams(message.data.activeStreams);
-              if (message.data.recentBets?.length > 0) {
-                setRecentBets(prev => [...message.data.recentBets, ...prev].slice(0, 20));
-              }
-            }
-            break;
-          case 'point_claim':
-            setRecentClaims(prev => [message.data, ...prev].slice(0, 20));
-            break;
-          case 'bet_result':
-            setRecentBets(prev => [message.data, ...prev].slice(0, 20));
-            break;
-          case 'stream_status':
-            setActiveStreams(prev => {
-              const existing = prev.findIndex(s => s.streamer === message.data.streamer);
-              if (existing >= 0) {
-                const updated = [...prev];
-                updated[existing] = { ...updated[existing], ...message.data };
-                return updated;
-              }
-              return prev;
-            });
-            break;
+      socket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          setMessages(prev => [...prev.slice(-99), data]);
+        } catch (error) {
+          console.error('Failed to parse WebSocket message:', error);
         }
-      } catch (error) {
-        console.error('Error parsing WebSocket message:', error);
-      }
+      };
+
+      socket.onclose = (event) => {
+        console.log('WebSocket closed:', event.code, event.reason);
+        setConnected(false);
+        setWs(null);
+
+        if (reconnectAttempts < maxReconnectAttempts) {
+          console.log(`Reconnecting in ${reconnectDelay / 1000}s (attempt ${reconnectAttempts + 1}/${maxReconnectAttempts})`);
+          setTimeout(() => {
+            setReconnectAttempts(prev => prev + 1);
+          }, reconnectDelay);
+        }
+      };
+
+      socket.onerror = (error) => {
+        console.error('WebSocket error:', error);
+      };
+
+      setWs(socket);
     };
 
-    websocket.onerror = (error) => {
-      console.error('WebSocket error:', error);
-    };
-
-    websocket.onclose = () => {
-      console.log('WebSocket disconnected, attempting to reconnect...');
-      setConnected(false);
-      setTimeout(() => {
-        window.location.reload();
-      }, 5000);
-    };
+    connect();
 
     return () => {
-      websocket.close();
+      if (ws) {
+        ws.close();
+      }
     };
-  }, []);
+  }, [reconnectAttempts]);
+
+  const sendMessage = (data: any) => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(data));
+    } else {
+      console.warn('WebSocket not connected, message not sent:', data);
+    }
+  };
 
   return (
-    <WebSocketContext.Provider value={{ connected, stats, recentClaims, activeStreams, recentBets }}>
+    <WebSocketContext.Provider value={{ ws, connected, messages, sendMessage }}>
       {children}
     </WebSocketContext.Provider>
   );
