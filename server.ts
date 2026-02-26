@@ -17,6 +17,13 @@ import tmi from 'tmi.js';
 
 
 const app = express();
+// Enhanced error logging middleware
+app.use((req, res, next) => {
+  console.log(`[API] ${req.method} ${req.path} | Query: ${JSON.stringify(req.query)} | Body: ${JSON.stringify(req.body).substring(0, 200)}`);
+  next();
+});
+
+
 const server = createServer(app);
 const PORT = process.env.PORT || 3000;
 
@@ -319,14 +326,19 @@ app.get('/api/settings/betting', (req, res) => {
 app.post('/api/settings/betting', (req, res) => {
   try {
     const updates = req.body;
+    console.log('[SETTINGS] Saving betting settings:', JSON.stringify(updates));
     Object.entries(updates).forEach(([key, value]) => {
       const existing = db.prepare('SELECT * FROM settings WHERE key = ?').get(key);
+      // Serialize objects/arrays to JSON strings for SQLite
+      const serializedValue = typeof value === 'object' ? JSON.stringify(value) : String(value);
+      console.log(`[SETTINGS] Saving key=${key}, value=${serializedValue}`);
       if (existing) {
-        db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(value, key);
+        db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(serializedValue, key);
       } else {
-        db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run(key, value);
+        db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run(key, serializedValue);
       }
     });
+    console.log('[SETTINGS] Settings saved successfully');
     res.json({ success: true });
   } catch (error) {
     console.error('Error saving betting settings:', error);
