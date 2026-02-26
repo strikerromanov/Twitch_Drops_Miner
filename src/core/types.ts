@@ -18,13 +18,15 @@ export interface Account {
   status: AccountStatus;
   createdAt: string;
   lastActive: string | null;
+  last_active?: string | null;  // Alias for compatibility
   user_id: string | null;
+  points_balance?: number;  // Current points balance
 }
 
 /**
  * Possible account statuses
  */
-export type AccountStatus = 'idle' | 'active' | 'error' | 'banned';
+export type AccountStatus = 'idle' | 'active' | 'inactive' | 'error' | 'banned';
 
 // ============================================
 // SETTINGS TYPES
@@ -90,15 +92,30 @@ export type LogLevel = 'error' | 'warn' | 'info' | 'debug';
 /**
  * Twitch drop campaign
  */
+/**
+ * Game information
+ */
+export interface Game {
+  id: string;
+  name: string;
+  genres?: string[];
+}
+
+/**
+ * Drop campaign information
+ */
 export interface DropCampaign {
   id: string;
   name: string;
-  game: string;
+  game: Game | string;  // Can be object or string
   required_minutes: number;
+  required_minutes_watch_time?: number;  // Alias for UI compatibility
   current_minutes: number;
   status: CampaignStatus;
   image_url: string | null;
   last_updated: string;
+  ends_at?: string | null;  // Campaign end time
+  allowed_channels?: string[];  // Channels eligible for drops
 }
 
 /**
@@ -200,7 +217,7 @@ export type BetOutcome = 'win' | 'loss' | 'pending' | 'refunded';
  * Game information
  */
 export interface Game {
-  id: number;
+  // id: number; // Duplicate - removed
   name: string;
   activeCampaigns: number;
   whitelisted: number;

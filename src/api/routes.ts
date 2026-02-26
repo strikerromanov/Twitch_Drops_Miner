@@ -14,7 +14,7 @@ import type {
 export const apiRouter = Router();
 
 const asyncHandler = (fn: Function) => (req: Request, res: Response, next: Function) => {
-  Promise.resolve(fn(req, res, next)).catch(next);
+  Promise.resolve(fn(req, res, next)).catch((err) => next(err));
 };
 
 apiRouter.get('/stats', asyncHandler(async (req: Request, res: Response) => {

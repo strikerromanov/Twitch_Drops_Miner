@@ -133,7 +133,7 @@ export const Dashboard: React.FC = () => {
                 <div className="flex justify-between items-start mb-2">
                   <div>
                     <h4 className="font-semibold text-white">{campaign.name}</h4>
-                    <p className="text-sm text-gray-400">{campaign.game?.name || 'Unknown Game'}</p>
+                    <p className="text-sm text-gray-400">{getGameName(campaign.game) || 'Unknown Game'}</p>
                   </div>
                   <span className={`px-2 py-1 rounded text-xs ${
                     campaign.status === 'active' ? 'bg-green-900/50 text-green-400' :
@@ -159,3 +159,5 @@ export const Dashboard: React.FC = () => {
     </div>
   );
 };
+
+export default Dashboard;

@@ -348,6 +348,51 @@ app.post('/api/settings/betting', (req, res) => {
 });
 
 // ===== ACCOUNT ROUTES =====
+
+app.get('/api/stats', (req, res) => {
+  try {
+    // Get account stats
+    const totalAccounts = db.prepare('SELECT COUNT(*) as count FROM accounts').get().count;
+    const activeAccounts = db.prepare('SELECT COUNT(*) as count FROM accounts WHERE status = "farming"').get().count;
+
+    // Get drop stats
+    const totalDrops = db.prepare('SELECT COUNT(*) as count FROM drop_progress').get().count;
+    const claimedDrops = db.prepare('SELECT COUNT(*) as count FROM drop_progress WHERE claimed = 1').get().count;
+
+    // Get recent claims (last 24 hours)
+    const recentClaims = db.prepare(`
+      SELECT COUNT(*) as count FROM point_claim_history 
+      WHERE datetime(claimedAt) > datetime('now', '-24 hours')
+    `).get().count;
+
+    // Get active streams count
+    const activeStreams = db.prepare('SELECT COUNT(*) as count FROM active_streams').get().count;
+
+    res.json({
+      activeAccounts: activeAccounts || 0,
+      totalAccounts: totalAccounts || 0,
+      totalDrops: totalDrops || 0,
+      claimedDrops: claimedDrops || 0,
+      recentClaims: recentClaims || 0,
+      activeStreams: activeStreams || 0,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error fetching stats:', error);
+    // Return default stats on error
+    res.json({
+      activeAccounts: 0,
+      totalAccounts: 0,
+      totalDrops: 0,
+      claimedDrops: 0,
+      recentClaims: 0,
+      activeStreams: 0,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+
 app.get('/api/accounts', (req, res) => {
   try {
     const accounts = db.prepare('SELECT id, username, status, createdAt, lastActive, user_id FROM accounts').all();
@@ -430,20 +475,25 @@ app.post('/api/games/:id/toggle', (req, res) => {
 // ===== LOGS ROUTES =====
 app.get('/api/logs', (req, res) => {
   try {
-    const { accountId, streamer } = req.query;
+    const { streamer_id, type } = req.query;
     let query = 'SELECT * FROM logs';
     const params: any[] = [];
-    
-    if (accountId) {
-      query += ' WHERE accountId = ?';
-      params.push(accountId);
-      
-      if (streamer) {
-        query += ' AND streamer = ?';
-        params.push(streamer);
-      }
+    const conditions: string[] = [];
+
+    if (streamer_id) {
+      conditions.push('streamer_id = ?');
+      params.push(streamer_id);
     }
-    
+
+    if (type) {
+      conditions.push('type = ?');
+      params.push(type);
+    }
+
+    if (conditions.length > 0) {
+      query += ' WHERE ' + conditions.join(' AND ');
+    }
+
     query += ' ORDER BY time DESC LIMIT 100';
     const logs = db.prepare(query).all(...params);
     res.json(logs);

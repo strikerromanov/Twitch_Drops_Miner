@@ -191,6 +191,7 @@ export class ChatFarmerService {
       context = await this.browser!.newContext({
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         storageState: {
+      cookies: [],
           origins: [{
             origin: 'https://www.twitch.tv',
             localStorage: [

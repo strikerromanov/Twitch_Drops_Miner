@@ -7,6 +7,10 @@ export const Campaigns: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'claimed' | 'expired'>('all');
 
+  // Helper functions for game type handling
+  const getGameName = (game: any) => typeof game === 'string' ? game : game?.name;
+  const getGameGenres = (game: any) => typeof game === 'object' && game?.genres ? game.genres : null;
+
   const fetchCampaigns = async () => {
     try {
       setLoading(true);
@@ -124,10 +128,10 @@ export const Campaigns: React.FC = () => {
                       </span>
                     </div>
                     <p className="text-sm text-gray-400">
-                      {campaign.game?.name || 'Unknown Game'}
-                      {campaign.game?.genres && (
+                      {getGameName(campaign.game) || 'Unknown Game'}
+                      {getGameGenres(campaign.game) && (
                         <span className="ml-2 text-gray-500">
-                          ({campaign.game.genres.join(', ')})
+                          ({getGameGenres(campaign.game).join(', ')})
                         </span>
                       )}
                     </p>
@@ -166,10 +170,10 @@ export const Campaigns: React.FC = () => {
                     <div className="flex flex-wrap gap-2">
                       {campaign.allowed_channels.slice(0, 5).map(channel => (
                         <span 
-                          key={channel.id}
+                          key={typeof channel === "string" ? channel : (channel as any).id}
                           className="px-2 py-1 bg-gray-700 rounded text-xs text-gray-300"
                         >
-                          {channel.name}
+                          {typeof channel === "string" ? channel : (channel as any).name}
                         </span>
                       ))}
                       {campaign.allowed_channels.length > 5 && (
@@ -188,3 +192,5 @@ export const Campaigns: React.FC = () => {
     </div>
   );
 };
+
+export default Campaigns;

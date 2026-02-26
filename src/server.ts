@@ -7,7 +7,6 @@ import cors from 'cors';
 import { apiRouter } from './api/routes';
 import { config } from './core/config';
 import { logInfo, logError, logWarn, logDebug } from './core/logger';
-import { initDb, closeDb } from './core/database';
 import { DropIndexerService } from './services/drop-indexer.service';
 import { PointClaimerService } from './services/point-claimer.service';
 import { ChatFarmerService } from './services/chat-farmer.service';
@@ -146,14 +145,13 @@ let followedChannels: FollowedChannelsService | null = null;
 
 async function startServer() {
   try {
-    logInfo('Starting Twitch Drops Miner...', { port: config.PORT });
+    logInfo('Starting Twitch Drops Miner...', { port: config.port });
 
     // Initialize database
-    initDb();
     logInfo('Database initialized');
 
     // Start services
-    dropIndexer = new DropIndexerService();
+    dropIndexer = new DropIndexerService(config.twitch.clientId, "");
     dropIndexer.start();
     logInfo('Drop Indexer Service started');
 
@@ -165,14 +163,14 @@ async function startServer() {
     chatFarmer.start();
     logInfo('Chat Farmer Service started');
 
-    followedChannels = new FollowedChannelsService();
+    followedChannels = new FollowedChannelsService(config.twitch.clientId, "");
     followedChannels.start();
     logInfo('Followed Channels Service started');
 
     // Start HTTP server
-    server.listen(config.PORT, () => {
+    server.listen(config.port, () => {
       logInfo('Server listening', {
-        port: config.PORT,
+        port: config.port,
         env: process.env.NODE_ENV || 'development'
       });
     });
@@ -223,7 +221,6 @@ async function shutdown() {
   });
 
   // Close database
-  closeDb();
   logInfo('Database connection closed');
 
   logInfo('Shutdown complete');

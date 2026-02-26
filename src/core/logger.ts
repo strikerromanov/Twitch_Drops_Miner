@@ -107,7 +107,7 @@ class Logger {
    * Format log entry as JSON string
    */
   private formatLogEntry(entry: LogEntry): string {
-    const baseEntry = {
+    const baseEntry: any = {
       timestamp: entry.timestamp,
       level: entry.level,
       message: entry.message,
