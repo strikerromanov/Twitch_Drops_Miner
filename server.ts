@@ -19,7 +19,8 @@ import tmi from 'tmi.js';
 const app = express();
 // Enhanced error logging middleware
 app.use((req, res, next) => {
-  console.log(`[API] ${req.method} ${req.path} | Query: ${JSON.stringify(req.query)} | Body: ${JSON.stringify(req.body).substring(0, 200)}`);
+  const bodyStr = req.body ? JSON.stringify(req.body) : 'undefined';
+  console.log(`[API] ${req.method} ${req.path} | Query: ${JSON.stringify(req.query)} | Body: ${bodyStr.substring(0, 200)}`);
   next();
 });
 
