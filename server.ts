@@ -630,7 +630,7 @@ console.log('✅ API routes registered');
       
       // Make services globally available for API routes
       (global as any).dropIndexer = dropIndexerService;
-      (global as any).chatFarming = chatFarming;
+      (global as any).chatFarming = chatFarmingService;
       (global as any).followedIndexer = followedIndexerService;
     } catch (error) {
       console.error('[SERVICES] Failed to initialize services:', error);
