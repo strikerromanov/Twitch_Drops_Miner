@@ -5,10 +5,11 @@ import Database from 'better-sqlite3';
 
 import { createServer } from 'http';
 import cron from 'node-cron';
-import { PointClaimingService } from './src/services/point-claimer.service.js';
-import { DropScrapingService } from './src/services/drop-indexer.service.js';
+import { PointClaimerService } from './src/services/point-claimer.service.js';
+import { DropIndexerService } from './src/services/drop-indexer.service.js';
 import { WebSocketService } from './websocket-server.js';
 import { MultiAccountCoordinator } from './multi-account-coordinator.js';
+import FollowedChannelsIndexer from './followed-channels-indexer';
 import { BackupService } from './backup-service.js';
 import { BettingEngine } from './betting-engine.js';
 import tmi from 'tmi.js';
@@ -259,16 +260,29 @@ try {
 
 // Initialize enhanced services
 console.log('Initializing enhanced services...');
+// Load settings BEFORE initializing services
+const settings = db.prepare('SELECT * FROM settings').all();
+const configClientId = settings.find((s: any) => s.key === 'twitchClientId')?.value || '';
+const envClientId = process.env.TWITCH_CLIENT_ID || '';
+// Prefer settings table, fallback to environment
+const clientId = configClientId || envClientId;
 
-const pointClaimingService = new PointClaimingService(db);
-const dropScrapingService = new DropScrapingService(db);
+if (!clientId) {
+  console.error('⚠️  TWITCH_CLIENT_ID not found in settings or environment');
+  console.error('Services requiring Client-ID will not function properly');
+} else {
+  console.log('✅ Client-ID loaded from', configClientId ? 'settings' : 'environment');
+}
 
+
+const pointClaimerService = new PointClaimerService(db);
+const dropIndexerService = new DropIndexerService(db, clientId);
+
+const followedIndexerService = new FollowedChannelsIndexer(db, clientId);
 
   // Initialize new services using dynamic imports
   (async () => {
     try {
-      const settings = db.prepare('SELECT * FROM settings').all() as any[];
-      const clientId = settings.find(s => s.key === 'twitchClientId')?.value || '';
       
       // Dynamic imports to avoid module format issues
 // API Routes for Twitch Drops Miner
@@ -353,7 +367,7 @@ app.get('/api/stats', (req, res) => {
   try {
     // Get account stats
     const totalAccounts = db.prepare('SELECT COUNT(*) as count FROM accounts').get().count;
-    const activeAccounts = db.prepare('SELECT COUNT(*) as count FROM accounts WHERE status = "farming"').get().count;
+    const activeAccounts = db.prepare(`SELECT COUNT(*) as count FROM accounts WHERE status = 'farming'`).get().count;
 
     // Get drop stats
     const totalDrops = db.prepare('SELECT COUNT(*) as count FROM drop_progress').get().count;
@@ -362,7 +376,7 @@ app.get('/api/stats', (req, res) => {
     // Get recent claims (last 24 hours)
     const recentClaims = db.prepare(`
       SELECT COUNT(*) as count FROM point_claim_history 
-      WHERE datetime(claimedAt) > datetime('now', '-24 hours')
+      WHERE datetime(claimed_at) > datetime('now', '-24 hours')
     `).get().count;
 
     // Get active streams count
@@ -605,28 +619,19 @@ app.get('/api/streamer-analysis', (req, res) => {
 });
 
 console.log('✅ API routes registered');
-      const { default: Dropboxer } = await import('./drop-indexer.ts');
-      const { default: ChatFarmingService } = await import('./chat-farming.ts');
-      const { default: FollowedChannelsIndexer } = await import('./followed-channels-indexer.ts');
-      
-      const dropIndexer = new Dropboxer(db, clientId);
-      const chatFarming = new ChatFarmingService(db);
-      const followedIndexer = new FollowedChannelsIndexer(db, clientId);
-      
-      console.log('[SERVICES] Dropboxer initialized');
       console.log('[SERVICES] Chat Farming Service initialized');
       console.log('[SERVICES] Followed Channels Indexer initialized');
       
       // Start drop indexing
-      dropIndexer.start();
+      dropIndexerService.start();
       
       // Start followed channels indexing
-      followedIndexer.start();
+      followedIndexerService.start();
       
       // Make services globally available for API routes
-      (global as any).dropIndexer = dropIndexer;
+      (global as any).dropIndexer = dropIndexerService;
       (global as any).chatFarming = chatFarming;
-      (global as any).followedIndexer = followedIndexer;
+      (global as any).followedIndexer = followedIndexerService;
     } catch (error) {
       console.error('[SERVICES] Failed to initialize services:', error);
     }

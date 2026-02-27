@@ -10,17 +10,34 @@ import { STREAM_CHECK_INTERVAL, TWITCH_API_URL } from '../core/config';
 export class FollowedChannelsService {
   private intervalId: NodeJS.Timeout | null = null;
   private isRunning: boolean = false;
+  private db: Database;
   private clientId: string;
-  private accessToken: string;
 
   /**
    * Create followed channels service
+   * @param db - Database instance
    * @param clientId - Twitch OAuth client ID
-   * @param accessToken - Twitch OAuth access token
    */
-  constructor(clientId: string, accessToken: string) {
+  constructor(db: Database, clientId: string) {
+    this.db = db;
     this.clientId = clientId;
-    this.accessToken = accessToken;
+  }
+
+  /**
+   * Get access token for a specific account from database
+   * @param accountId - Account ID
+   * @returns Access token
+   */
+  private getAccountToken(accountId: number): string {
+    const account = this.db.prepare(
+      'SELECT access_token FROM accounts WHERE id = ?'
+    ).get(accountId) as { access_token: string } | undefined;
+
+    if (!account?.access_token) {
+      throw new Error(`No access token found for account ${accountId}`);
+    }
+
+    return account.access_token;
   }
 
   /**
@@ -134,7 +151,7 @@ export class FollowedChannelsService {
       {
         headers: {
           'Client-Id': this.clientId,
-          'Authorization': `Bearer ${this.accessToken}`,
+          'Authorization': `Bearer ${account.access_token}`,
           'Content-Type': 'application/json'
         }
       }
@@ -180,12 +197,24 @@ export class FollowedChannelsService {
    * @param streamer - Streamer username to update
    */
   private async updateChannelStatus(streamer: string): Promise<void> {
+    // Get a token from one of the accounts that follows this channel
+    const accountData = this.db.prepare(
+      'SELECT a.access_token FROM accounts a ' +
+      'INNER JOIN followed_channels f ON a.id = f.account_id ' +
+      'WHERE f.streamer = ? AND a.access_token IS NOT NULL ' +
+      'LIMIT 1'
+    ).get(streamer) as { access_token: string } | undefined;
+
+    if (!accountData?.access_token) {
+      throw new Error(`No access token found for any account following ${streamer}`);
+    }
+
     const response = await fetch(
       `${TWITCH_API_URL}/streams?user_login=${streamer}`,
       {
         headers: {
           'Client-Id': this.clientId,
-          'Authorization': `Bearer ${this.accessToken}`,
+          'Authorization': `Bearer ${accountData.access_token}`,
           'Content-Type': 'application/json'
         }
       }

@@ -18,8 +18,8 @@ interface CacheEntry {
 export class DropIndexerService {
   private intervalId: NodeJS.Timeout | null = null;
   private isRunning: boolean = false;
+  private db: Database;
   private clientId: string;
-  private accessToken: string;
   
   // Caching
   private campaignCache: Map<string, CacheEntry> = new Map();
@@ -37,9 +37,25 @@ export class DropIndexerService {
   private readonly MIN_INTERVAL = 30000; // 30 seconds
   private readonly MAX_INTERVAL = 600000; // 10 minutes
 
-  constructor(clientId: string, accessToken: string) {
+  constructor(db: Database, clientId: string) {
+    this.db = db;
     this.clientId = clientId;
-    this.accessToken = accessToken;
+  }
+
+  /**
+   * Get access token for farming account from database
+   * @returns Access token from first farming account
+   */
+  private getAccountToken(): string {
+    const account = this.db.prepare(
+      'SELECT access_token FROM accounts WHERE status = ? LIMIT 1'
+    ).get('farming') as { access_token: string } | undefined;
+
+    if (!account?.access_token) {
+      throw new Error('No access token found for farming account');
+    }
+
+    return account.access_token;
   }
 
   start(): void {
@@ -170,7 +186,7 @@ export class DropIndexerService {
     const response = await fetch(`${TWITCH_API_URL}/drops/entitlements/campaigns?active_only=true`, {
       headers: {
         'Client-Id': this.clientId,
-        'Authorization': `Bearer ${this.accessToken}`,
+        'Authorization': `Bearer ${this.getAccountToken()}`,
         'Content-Type': 'application/json'
       }
     });
