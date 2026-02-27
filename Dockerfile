@@ -45,6 +45,7 @@ COPY --from=builder /app/dist ./dist
 
 # Copy TypeScript source (server.ts uses imports from src/)
 COPY --from=builder /app/server.ts ./
+COPY --from=builder /app/followed-channels-indexer.ts ./
 COPY --from=builder /app/src ./src
 
 # Copy Playwright browsers and cache from builder
