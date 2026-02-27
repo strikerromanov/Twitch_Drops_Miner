@@ -234,7 +234,7 @@ apiRouter.get('/stats', asyncHandler(async (req: Request, res: Response) => {
     const activeDrops = getDb().prepare("SELECT COUNT(*) as count FROM drop_campaigns WHERE status = 'active'").get() as { count: number };
     const claimedDrops = getDb().prepare("SELECT COUNT(*) as count FROM drop_campaigns WHERE status = 'claimed'").get() as { count: number };
     const activeStreams = getDb().prepare('SELECT COUNT(*) as count FROM active_streams').get() as { count: number };
-    const recentClaims = getDb().prepare('SELECT COUNT(*) as count FROM point_claim_history WHERE claimed_at > datetime("now", "-1 hour")').get() as { count: number };
+    const recentClaims = getDb().prepare('SELECT COUNT(*) as count FROM point_claim_history WHERE claimed_at > datetime('now', '-1 hour')').get() as { count: number };
 
     const stats = {
       activeAccounts: activeAccounts.count,

@@ -100,6 +100,15 @@ export class DropIndexerService {
 
   async syncCampaigns(): Promise<void> {
     try {
+
+      // Check if any farming accounts exist before attempting to fetch campaigns
+      const accounts = getDb().prepare('SELECT COUNT(*) as count FROM accounts WHERE status = ?').get('farming') as { count: number };
+      
+      if (!accounts || accounts.count === 0) {
+        logDebug('No farming accounts found, skipping campaign sync');
+        return;
+      }
+      
       logDebug('Syncing drop campaigns with adaptive polling', {
         interval: this.currentPollingInterval,
         cacheSize: this.campaignCache.size
