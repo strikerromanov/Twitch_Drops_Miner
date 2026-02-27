@@ -7,6 +7,7 @@ import { createServer } from 'http';
 import cron from 'node-cron';
 import { PointClaimerService } from './src/services/point-claimer.service.js';
 import { DropIndexerService } from './src/services/drop-indexer.service.js';
+import { ChatFarmerService } from './src/services/chat-farmer.service.js';
 import { WebSocketService } from './websocket-server.js';
 import { MultiAccountCoordinator } from './multi-account-coordinator.js';
 import FollowedChannelsIndexer from './followed-channels-indexer';
@@ -278,6 +279,7 @@ if (!clientId) {
 const pointClaimerService = new PointClaimerService(db);
 const dropIndexerService = new DropIndexerService(db, clientId);
 
+const chatFarmingService = new ChatFarmerService();
 const followedIndexerService = new FollowedChannelsIndexer(db, clientId);
 
   // Initialize new services using dynamic imports
