@@ -5,8 +5,8 @@ import Database from 'better-sqlite3';
 
 import { createServer } from 'http';
 import cron from 'node-cron';
-import { PointClaimingService } from './point-claiming.js';
-import { DropScrapingService } from './drop-scraping.js';
+import { PointClaimingService } from './src/services/point-claimer.service.js';
+import { DropScrapingService } from './src/services/drop-indexer.service.js';
 import { WebSocketService } from './websocket-server.js';
 import { MultiAccountCoordinator } from './multi-account-coordinator.js';
 import { BackupService } from './backup-service.js';
