@@ -13,6 +13,9 @@ export const Accounts: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showOAuthModal, setShowOAuthModal] = useState(false);
+  const [authStatus, setAuthStatus] = useState<any>(null);
+  const [oauthLoading, setOauthLoading] = useState(false);
   const [newAccount, setNewAccount] = useState<AddAccountForm>({
     username: '',
     access_token: '',
@@ -34,9 +37,70 @@ export const Accounts: React.FC = () => {
     }
   };
 
+  const fetchAuthStatus = async () => {
+    try {
+      const response = await fetch('/api/auth/status');
+      if (response.ok) {
+        const data = await response.json();
+        setAuthStatus(data);
+      }
+    } catch (err) {
+      console.warn('Failed to fetch auth status');
+    }
+  };
+
   useEffect(() => {
     fetchAccounts();
+    fetchAuthStatus();
+
+    // Check if we have an OAuth code in the URL (from callback)
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    if (code) {
+      handleOAuthCallback(code);
+      // Clear the code from URL
+      window.history.replaceState({}, '', window.location.pathname);
+    }
   }, []);
+
+  const handleOAuthCallback = async (code: string) => {
+    setOauthLoading(true);
+    try {
+      const response = await fetch('/api/auth/callback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code })
+      });
+      if (!response.ok) throw new Error('OAuth authentication failed');
+      const data = await response.json();
+      await fetchAccounts();
+      alert(data.account.isNew 
+        ? `Successfully added account: ${data.account.username}`
+        : `Successfully logged in: ${data.account.username}`);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'OAuth authentication failed');
+    } finally {
+      setOauthLoading(false);
+    }
+  };
+
+  const handleLoginWithTwitch = async () => {
+    setOauthLoading(true);
+    try {
+      const response = await fetch('/api/auth/twitch');
+      if (!response.ok) throw new Error('Failed to generate authorization URL');
+      const data = await response.json();
+      
+      // Store state before redirecting
+      sessionStorage.setItem('oauth_state', 'pending');
+      
+      // Redirect to Twitch authorization page
+      window.location.href = data.authUrl;
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to start OAuth flow');
+      setOauthLoading(false);
+    }
+  };
 
   const handleAddAccount = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,13 +148,45 @@ export const Accounts: React.FC = () => {
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">Accounts</h2>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg font-medium transition-colors"
-        >
-          Add Account
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg font-medium transition-colors"
+          >
+            Add Account Manually
+          </button>
+          <button
+            onClick={handleLoginWithTwitch}
+            disabled={oauthLoading || !authStatus?.configured}
+            className="px-6 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {oauthLoading ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                Connecting...
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714Z"/>
+                </svg>
+                Login with Twitch
+              </>
+            )}
+          </button>
+        </div>
       </div>
+
+      {!authStatus?.configured && (
+        <div className="bg-yellow-900/30 border border-yellow-500 rounded-lg p-4">
+          <p className="text-yellow-400 font-medium">
+            ⚠️ OAuth not configured
+          </p>
+          <p className="text-yellow-300/80 text-sm mt-1">
+            Please configure TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET, and TWITCH_REDIRECT_URI environment variables to enable OAuth login.
+          </p>
+        </div>
+      )}
 
       {error && (
         <div className="bg-red-900/30 border border-red-500 rounded-lg p-4">
@@ -102,12 +198,23 @@ export const Accounts: React.FC = () => {
         {accounts.length === 0 ? (
           <div className="bg-gray-800 rounded-lg p-8 text-center border border-gray-700">
             <p className="text-gray-400">No accounts configured</p>
-            <button
-              onClick={() => setShowAddModal(true)}
-              className="mt-4 px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg"
-            >
-              Add Your First Account
-            </button>
+            <div className="flex justify-center gap-3 mt-4">
+              {authStatus?.configured && (
+                <button
+                  onClick={handleLoginWithTwitch}
+                  disabled={oauthLoading}
+                  className="px-6 py-3 bg-purple-600 hover:bg-purple-700 rounded-lg font-medium transition-colors disabled:opacity-50"
+                >
+                  Login with Twitch
+                </button>
+              )}
+              <button
+                onClick={() => setShowAddModal(true)}
+                className="px-6 py-3 bg-gray-700 hover:bg-gray-600 rounded-lg font-medium transition-colors"
+              >
+                Add Account Manually
+              </button>
+            </div>
           </div>
         ) : (
           accounts.map(account => (
@@ -146,10 +253,11 @@ export const Accounts: React.FC = () => {
         )}
       </div>
 
+      {/* Manual Add Account Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
           <div className="bg-gray-800 rounded-lg p-6 w-full max-w-md border border-gray-700">
-            <h3 className="text-xl font-bold mb-4">Add Account</h3>
+            <h3 className="text-xl font-bold mb-4">Add Account Manually</h3>
             <form onSubmit={handleAddAccount} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-1">Username</label>
