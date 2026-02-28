@@ -104,7 +104,7 @@ app.get('/auth/callback', async (req: Request, res: Response) => {
   }
 
   try {
-    const validState = validateState(state);
+    const validState = validateState(state as string);
     if (!validState) {
       return res.status(400).json({ error: 'Invalid state parameter' });
     }
@@ -112,16 +112,20 @@ app.get('/auth/callback', async (req: Request, res: Response) => {
     const tokenData = await exchangeCodeForToken(code as string);
     const userData = await getUserInfo(tokenData.access_token);
 
+    if (!userData) {
+      throw new Error('Failed to get user info');
+    }
+
     const account = {
       user_id: userData.id,
       username: userData.login,
       access_token: tokenData.access_token,
       refresh_token: tokenData.refresh_token,
-      expires_at: tokenData.expires_at || Date.now() + 3600000,
+      expires_at: Date.now() + (tokenData.expires_in * 1000),
       status: 'farming'
     };
 
-    Queries.insertAccount(account);
+    Queries.upsertAccount(account);
     logInfo('Account added:', userData.login);
 
     res.redirect('/');
@@ -146,18 +150,6 @@ app.post('/api/stop', (req, res) => {
   chatFarmer.stop();
   followedChannels.stop();
   bettingService.stop();
-  res.json({ success: true });
-});
-
-app.post('/api/claim', async (req, res) => {
-  const { streamer } = req.body;
-  const result = await pointClaimer.claimPoints(streamer);
-  res.json(result);
-});
-
-app.post('/api/chat', async (req, res) => {
-  const { streamer, message } = req.body;
-  await chatFarmer.sendMessage(streamer, message);
   res.json({ success: true });
 });
 

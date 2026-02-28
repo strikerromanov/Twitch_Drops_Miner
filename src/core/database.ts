@@ -93,7 +93,15 @@ function initializeDatabase() {
 export const Queries = {
   getAccountByUserId: (userId: string) => {
     return getDb().prepare('SELECT * FROM accounts WHERE user_id = ?').get(userId);
-  },
+  ,
+  getStats: () => {
+    const db = getDb();
+    return {
+      accounts: db.prepare("SELECT COUNT(*) as count FROM accounts").get(),
+      campaigns: db.prepare("SELECT COUNT(*) as count FROM drop_campaigns").get(),
+      logs: db.prepare("SELECT COUNT(*) as count FROM logs").get()
+    };
+  }},
   getAllAccounts: () => {
     return getDb().prepare('SELECT * FROM accounts ORDER BY created_at DESC').all();
   },
