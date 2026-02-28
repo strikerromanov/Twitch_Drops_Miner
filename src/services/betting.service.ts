@@ -144,7 +144,7 @@ export class BettingService {
   }
 
   getBettingStats(accountId?: number): BettingStats {
-    let query = 'SELECT * FROM bets';
+    let query = 'SELECT * FROM betting_history';
     let params: any[] = [];
     
     if (accountId) {
@@ -173,7 +173,7 @@ export class BettingService {
 
   getRecentBets(limit = 50) {
     return db.prepare(`
-      SELECT * FROM bets 
+      SELECT * FROM betting_history 
       ORDER BY timestamp DESC 
       LIMIT ?
     `).all(limit);
