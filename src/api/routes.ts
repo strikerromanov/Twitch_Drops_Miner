@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { bettingService } from '../services/betting.service.js';
+import bettingService from '../services/betting.service.js';
 import { Queries, getDb } from '../core/database';
 import { logInfo, logError, logWarn } from '../core/logger';
 import {
