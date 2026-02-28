@@ -12,12 +12,12 @@ import { logInfo, logError } from './core/logger';
 import { getConfig } from './core/config';
 import { Queries } from './core/database';
 
-// Services use default exports: export default new ServiceName()
-import dropIndexerService from './services/drop-indexer.service';
-import pointClaimerService from './services/point-claimer.service';
-import chatFarmerService from './services/chat-farmer.service';
-import followedChannelsService from './services/followed-channels.service';
-import healthCheckService from './services/health-check.service';
+// Services are default exports: export default new ServiceClass()
+import dropIndexer from './services/drop-indexer.service';
+import pointClaimer from './services/point-claimer.service';
+import chatFarmer from './services/chat-farmer.service';
+import followedChannels from './services/followed-channels.service';
+import healthCheck from './services/health-check.service';
 import bettingService from './services/betting.service';
 
 const app = express();
@@ -42,7 +42,7 @@ const broadcast = (data: any) => {
 setInterval(() => broadcast({ type: 'stats', data: Queries.getStats() }), 5000);
 
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'healthy', services: healthCheckService.getStatus() });
+  res.json({ status: 'healthy', services: healthCheck.getStatus() });
 });
 
 app.get('/api/stats', (req, res) => {
@@ -60,7 +60,8 @@ app.get('/api/accounts', (req, res) => {
 app.post('/api/accounts/:id/status', (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
-  Queries.updateAccountStatus(status, parseInt(id as string, 10));
+  const accountId = parseInt(id as string, 10);
+  Queries.updateAccountStatus(status, accountId);
   res.json({ success: true });
 });
 
@@ -96,7 +97,7 @@ app.get('/auth/callback', async (req: Request, res: Response) => {
   const { code, state, error, error_description } = req.query;
 
   if (error) {
-    logError('Auth error: ' + error);
+    logError('Auth error: ' + String(error));
     return res.redirect('/?error=auth_failed');
   }
 
@@ -131,30 +132,30 @@ app.get('/auth/callback', async (req: Request, res: Response) => {
 
     res.redirect('/');
   } catch (error: any) {
-    logError('Token exchange failed: ' + error.message);
+    logError('Token exchange failed: ' + String(error?.message || error));
     res.redirect('/?error=token_exchange_failed');
   }
 });
 
 app.post('/api/start', (req, res) => {
-  dropIndexerService.start();
-  pointClaimerService.start();
-  chatFarmerService.start();
-  followedChannelsService.start();
+  dropIndexer.start();
+  pointClaimer.start();
+  chatFarmer.start();
+  followedChannels.start();
   bettingService.start();
   res.json({ success: true });
 });
 
 app.post('/api/stop', (req, res) => {
-  dropIndexerService.stop();
-  pointClaimerService.stop();
-  chatFarmerService.stop();
-  followedChannelsService.stop();
+  dropIndexer.stop();
+  pointClaimer.stop();
+  chatFarmer.stop();
+  followedChannels.stop();
   bettingService.stop();
   res.json({ success: true });
 });
 
 server.listen(PORT, '0.0.0.0', () => {
   logInfo('Server running on port ' + PORT);
-  healthCheckService.start();
+  healthCheck.start();
 });
