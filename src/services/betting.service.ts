@@ -70,7 +70,10 @@ class BettingService {
     };
   }
 
-  getStats() {
+  getStats()
+  getBettingStats() {
+    return this.getStats();
+  } {
     return {
       bets: [],
       total: 0,

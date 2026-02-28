@@ -173,6 +173,8 @@ export const Queries = {
   getAccountById: (id: number) => {
     return getDb().prepare('SELECT * FROM accounts WHERE id = ?').get(id);
   }
-};
+,  deleteAccount: (id: string) => {
+    return getDb().prepare('DELETE FROM accounts WHERE id = ?').run(id);
+  }};
 
 export default getDb;
