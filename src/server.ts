@@ -12,6 +12,7 @@ import { logInfo, logError, logDebug } from './core/logger';
 import { getConfig } from './core/config';
 import { Queries } from './core/database';
 
+// Default imports for services (they use export default new Service())
 import dropIndexer from './services/drop-indexer.service';
 import pointClaimer from './services/point-claimer.service';
 import chatFarmer from './services/chat-farmer.service';

@@ -136,6 +136,9 @@ export const Queries = {
   getAllAccounts: () => {
     return getDb().prepare('SELECT * FROM accounts').all();
   },
+  getFarmingAccounts: () => {
+    return getDb().prepare('SELECT * FROM accounts WHERE status = ?').all('farming');
+  },
   upsertAccount: (data: any) => {
     const stmt = getDb().prepare(`
       INSERT INTO accounts (user_id, username, access_token, refresh_token, expires_at, status)
