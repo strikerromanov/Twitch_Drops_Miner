@@ -330,3 +330,36 @@ export interface TwitchDropCampaign {
   end_time: string;
   image_url: string;
 }
+
+export interface BettingStats {
+  totalBets: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  pointsWon: number;
+  pointsLost: number;
+  netProfit: number;
+}
+
+export interface RecentBet {
+  id: number;
+  account_id: number;
+  streamer_name: string;
+  prediction_title: string;
+  outcome_selected: string;
+  outcome_percentage: number;
+  points_wagered: number;
+  points_won: number;
+  timestamp: string;
+}
+
+export interface PredictionEvent {
+  id: string;
+  streamerName: string;
+  title: string;
+  outcome1: string;
+  outcome1Percentage: number;
+  outcome2: string;
+  outcome2Percentage: number;
+  points: number;
+}

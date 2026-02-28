@@ -32,5 +32,5 @@
   <Config Name="Node Environment" Target="NODE_ENV" Default="production" Mode="" Description="Node environment" Type="Variable" Display="advanced" Required="false" Mask="false">production</Config>
   <Config Name="Server Port" Target="PORT" Default="3000" Mode="" Description="Server port" Type="Variable" Display="advanced" Required="false" Mask="false">3000</Config>
   <Config Name="Twitch Client ID" Target="TWITCH_CLIENT_ID" Default="" Mode="" Description="Twitch OAuth Client ID" Type="Variable" Display="always" Required="true" Mask="false">5c7q7whjviosekkutuvj80a5kijotk</Config>
-  <Config Name="Twitch Client Secret" Target="TWITCH_CLIENT_SECRET" Default="" Mode="" Description="Twitch OAuth Client Secret" Type="Variable" Display="always" Required="true" Mask="true">5c7q7whjviosekkutuvj80a5kijotk</Config>
+  <Config Name="Twitch Client Secret" Target="TWITCH_CLIENT_SECRET" Default="" Mode="" Description="Twitch OAuth Client Secret" Type="Variable" Display="always" Required="true" Mask="true">32a4edb7158f1486b6f2314dc1eb10dbc3dca067dfb3fbef9358ce62fd2fcde2</Config>
 </Container>

@@ -642,3 +642,49 @@ apiRouter.post('/api/cache/clear', (req, res) => {
     });
   }
 });
+
+// ============= BETTING ENDPOINTS =============
+import { bettingService } from '../services/betting.service.js';
+
+app.get('/api/betting-stats', (req, res) => {
+  try {
+    const accountId = req.query.accountId ? parseInt(req.query.accountId as string) : undefined;
+    const stats = bettingService.getBettingStats(accountId);
+    res.json(stats);
+  } catch (error) {
+    logger.error('Error getting betting stats:', error);
+    res.status(500).json({ error: 'Failed to get betting stats' });
+  }
+});
+
+app.get('/api/betting-history', (req, res) => {
+  try {
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+    const history = bettingService.getRecentBets(limit);
+    res.json(history);
+  } catch (error) {
+    logger.error('Error getting betting history:', error);
+    res.status(500).json({ error: 'Failed to get betting history' });
+  }
+});
+
+app.post('/api/place-bet', (req, res) => {
+  try {
+    const { accountId, prediction } = req.body;
+    
+    if (!accountId || !prediction) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+    
+    const result = bettingService.placeBet(accountId, prediction);
+    
+    if (result) {
+      res.json({ success: true, ...result });
+    } else {
+      res.json({ success: false, message: 'Bet not placed (confidence too low)' });
+    }
+  } catch (error) {
+    logger.error('Error placing bet:', error);
+    res.status(500).json({ error: 'Failed to place bet' });
+  }
+});

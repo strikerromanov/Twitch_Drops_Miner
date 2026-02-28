@@ -9,6 +9,7 @@ import { config } from './core/config';
 import { logInfo, logError, logWarn, logDebug } from './core/logger';
 import { DropIndexerService } from './services/drop-indexer.service';
 import { PointClaimerService } from './services/point-claimer.service';
+import { bettingService } from './services/betting.service.js';
 import { ChatFarmerService } from './services/chat-farmer.service';
 import { FollowedChannelsService } from './services/followed-channels.service';
 
@@ -165,6 +166,8 @@ async function startServer() {
 
     followedChannels = new FollowedChannelsService(config.twitch.clientId, "");
     followedChannels.start();
+// Start betting service
+  bettingService.start();
     logInfo('Followed Channels Service started');
 
     // Start HTTP server
