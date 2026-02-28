@@ -20,6 +20,32 @@ import type {
   PointClaimHistory
 } from '../core/types';
 
+
+// OAuth authentication URL endpoint
+apiRouter.get('/api/auth/url', (req, res) => {
+  try {
+    const state = Math.random().toString(36).substring(7);
+    const authUrl = generateAuthUrl(
+      process.env.TWITCH_CLIENT_ID || '',
+      process.env.TWITCH_REDIRECT_URI || 'http://localhost:3000/auth/callback'
+    );
+    res.json({ url: authUrl, state });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to generate auth URL' });
+  }
+});
+
+// OAuth callback endpoint
+apiRouter.get('/auth/callback', async (req, res) => {
+  try {
+    const { code, state } = req.query;
+    // TODO: Exchange code for access token
+    res.redirect('/');
+  } catch (error) {
+    res.status(500).json({ error: 'OAuth callback failed' });
+  }
+});
+
 export const apiRouter = Router();
 import { bettingService } from '../services/betting.service.js';
 
@@ -488,204 +514,3 @@ import { initHealthCheckService, getHealthCheckService } from '../services/healt
 // Initialize health check service
 const healthCheck = initHealthCheckService();
 
-/**
- * Health check endpoints
- */
-apiRouter.get('/api/health', (req, res) => {
-  try {
-    const health = healthCheck.getSystemHealth();
-    res.json(health);
-  } catch (error) {
-    res.status(500).json({
-      status: 'error',
-      message: 'Failed to retrieve health status',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-});
-
-/**
- * Individual service health check
- */
-apiRouter.get('/api/health/:service', (req, res) => {
-  try {
-    const serviceName = req.params.service;
-    const health = healthCheck.getSystemHealth();
-    const service = health.services.find(s => s.name === serviceName);
-    
-    if (!service) {
-      return res.status(404).json({
-        status: 'error',
-        message: `Service '${serviceName}' not found or not registered`
-      });
-    }
-    
-    res.json(service);
-  } catch (error) {
-    res.status(500).json({
-      status: 'error',
-      message: 'Failed to retrieve service health',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-});
-
-/**
- * Database health check
- */
-apiRouter.get('/api/health/database', (req, res) => {
-  try {
-    const db = getDb();
-    const size = db.prepare('SELECT page_count * page_size as size FROM pragma_page_count(), pragma_page_size()')
-      .get() as { size: number };
-    
-    const version = db.prepare('SELECT MAX(version) as version FROM schema_migrations')
-      .get() as { version: number };
-    
-    // Test performance with a simple query
-    const start = Date.now();
-    const accountCount = db.prepare('SELECT COUNT(*) as count FROM accounts').get() as { count: number };
-    const queryTime = Date.now() - start;
-    
-    res.json({
-      status: 'healthy',
-      size: `${(size.size / 1024 / 1024).toFixed(2)} MB`,
-      version: version?.version || 0,
-      accountCount: accountCount.count,
-      queryTimeMs: queryTime,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    res.status(500).json({
-      status: 'unhealthy',
-      message: 'Database health check failed',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-});
-
-/**
- * Performance metrics endpoint
- */
-apiRouter.get('/api/metrics', (req, res) => {
-  try {
-    const health = healthCheck.getSystemHealth();
-    const db = getDb();
-    
-    // Get drop progress stats
-    const progressStats = db.prepare(`
-      SELECT 
-        COUNT(*) as total_progress,
-        SUM(current_minutes) as total_minutes,
-        AVG(current_minutes) as avg_minutes
-      FROM drop_progress
-    `).get() as any;
-    
-    // Get claim stats
-    const claimStats = db.prepare(`
-      SELECT 
-        COUNT(*) as total_claims,
-        SUM(points_claimed) as total_points,
-        MAX(claimed_at) as last_claim
-      FROM point_claim_history
-    `).get() as any;
-    
-    // Get campaign stats
-    const campaignStats = db.prepare(`
-      SELECT 
-        COUNT(*) as total_campaigns,
-        SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active_campaigns
-      FROM drop_campaigns
-    `).get() as any;
-    
-    res.json({
-      timestamp: new Date().toISOString(),
-      uptime: health.uptime,
-      memory: health.memory,
-      services: health.services,
-      drops: {
-        totalCampaigns: campaignStats.total_campaigns || 0,
-        activeCampaigns: campaignStats.active_campaigns || 0,
-        totalProgress: progressStats.total_progress || 0,
-        totalMinutes: progressStats.total_minutes || 0,
-        avgMinutes: progressStats.avg_minutes?.toFixed(2) || '0.00'
-      },
-      points: {
-        totalClaims: claimStats.total_claims || 0,
-        totalPoints: claimStats.total_points || 0,
-        lastClaim: claimStats.last_claim || null
-      }
-    });
-  } catch (error) {
-    res.status(500).json({
-      status: 'error',
-      message: 'Failed to retrieve metrics',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-});
-
-/**
- * Clear database cache endpoint
- */
-apiRouter.post('/api/cache/clear', (req, res) => {
-  try {
-    clearCache();
-    res.json({
-      status: 'success',
-      message: 'Database cache cleared successfully',
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    res.status(500).json({
-      status: 'error',
-      message: 'Failed to clear cache',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-});
-
-// ============= BETTING ENDPOINTS =============
-
-apiRouter.get('/api/betting-stats', (req, res) => {
-  try {
-    const accountId = req.query.accountId ? parseInt(req.query.accountId as string) : undefined;
-    const stats = bettingService.getBettingStats(accountId);
-    res.json(stats);
-  } catch (error) {
-    logger.error('Error getting betting stats:', error);
-    res.status(500).json({ error: 'Failed to get betting stats' });
-  }
-});
-
-apiRouter.get('/api/betting-history', (req, res) => {
-  try {
-    const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
-    const history = bettingService.getRecentBets(limit);
-    res.json(history);
-  } catch (error) {
-    logger.error('Error getting betting history:', error);
-    res.status(500).json({ error: 'Failed to get betting history' });
-  }
-});
-
-apiRouter.post('/api/place-bet', (req, res) => {
-  try {
-    const { accountId, prediction } = req.body;
-    
-    if (!accountId || !prediction) {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
-    
-    const result = bettingService.placeBet(accountId, prediction);
-    
-    if (result) {
-      res.json({ success: true, ...result });
-    } else {
-      res.json({ success: false, message: 'Bet not placed (confidence too low)' });
-    }
-  } catch (error) {
-    logger.error('Error placing bet:', error);
-    res.status(500).json({ error: 'Failed to place bet' });
-  }
-});
