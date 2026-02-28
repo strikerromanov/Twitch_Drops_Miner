@@ -1,5 +1,5 @@
-import fs from 'fs';
-import path from 'path';
+import * as fs from "fs";
+import path from "path";
 import { LOG_LEVEL, LOG_FILE_PATH, MAX_LOG_SIZE, MAX_LOG_FILES } from './config';
 
 // ============================================

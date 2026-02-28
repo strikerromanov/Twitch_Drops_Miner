@@ -1,3 +1,4 @@
+import { Queries } from "../core/database";
 import { getDb } from '../core/database.js';
 import { getLogger } from '../core/logger.js';
 
@@ -181,3 +182,19 @@ export class BettingService {
 }
 
 export const bettingService = new BettingService();
+
+  getStats() {
+    return {
+      bets: [],
+      total: 0,
+      won: 0,
+      lost: 0
+    };
+  }
+
+  analyzeStreamer(streamer: string) {
+    return {
+      streamer,
+      analysis: 'Not implemented yet'
+    };
+  }
