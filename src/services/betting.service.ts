@@ -31,7 +31,7 @@ export class BettingService {
   }
 
   private initializeDatabase() {
-    db.exec(`
+    getDb().exec(`
       CREATE TABLE IF NOT EXISTS bets (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         account_id INTEGER,
