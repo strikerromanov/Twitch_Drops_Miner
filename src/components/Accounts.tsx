@@ -83,6 +83,33 @@ export const Accounts: React.FC = () => {
       setOauthLoading(false);
     }
   };
+  const handleManualCodeSubmit = async (code: string) => {
+    if (!code.trim()) {
+      alert('Please enter the authorization code');
+      return;
+    }
+    setOauthLoading(true);
+    try {
+      const response = await fetch('/api/auth/callback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: code.trim() })
+      });
+      if (!response.ok) throw new Error('OAuth authentication failed');
+      const data = await response.json();
+      await fetchAccounts();
+      setShowManualCodeModal(false);
+      setManualAuthCode('');
+      alert(data.account.isNew
+        ? `Successfully added account: ${data.account.username}`
+        : `Successfully logged in: ${data.account.username}`);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'OAuth authentication failed');
+    } finally {
+      setOauthLoading(false);
+    }
+  };
+
 
   const handleLoginWithTwitch = async () => {
     setOauthLoading(true);
@@ -95,7 +122,7 @@ export const Accounts: React.FC = () => {
       sessionStorage.setItem('oauth_state', 'pending');
       
       // Redirect to Twitch authorization page
-      window.location.href = data.authUrl;
+      window.open(data.authUrl, 'twitch_oauth', 'width=600,height=700,popup');
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to start OAuth flow');
       setOauthLoading(false);
@@ -252,6 +279,64 @@ export const Accounts: React.FC = () => {
           ))
         )}
       </div>
+
+      
+
+      {/* Manual OAuth Code Entry Modal */}
+      {showManualCodeModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl border border-gray-700">
+            <h3 className="text-xl font-bold mb-4">Add Account via OAuth Code</h3>
+            <div className="space-y-4">
+              <div className="bg-gray-700 p-4 rounded">
+                <p className="text-sm font-medium mb-2">Step 1: Click the button below to open Twitch authorization</p>
+                <button
+                  onClick={handleLoginWithTwitch}
+                  className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded transition-colors"
+                >
+                  Open Twitch Authorization Page
+                </button>
+              </div>
+              
+              <div className="bg-gray-700 p-4 rounded">
+                <p className="text-sm font-medium mb-2">Step 2: After authorizing, copy the code from the URL</p>
+                <p className="text-xs text-gray-400 mb-2">The code is the 'code=' parameter in the redirected URL</p>
+                
+                <label className="block text-sm font-medium mb-1">Paste Authorization Code</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Paste the code from Twitch authorization URL"
+                  value={manualAuthCode}
+                  onChange={e => setManualAuthCode(e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded focus:outline-none focus:border-purple-500 font-mono text-sm"
+                />
+              </div>
+              
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowManualCodeModal(false);
+                    setManualAuthCode('');
+                  }}
+                  className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleManualCodeSubmit(manualAuthCode)}
+                  disabled={!manualAuthCode.trim()}
+                  className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded transition-colors"
+                >
+                  Submit Code
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Manual Add Account Modal */}
       {showAddModal && (
