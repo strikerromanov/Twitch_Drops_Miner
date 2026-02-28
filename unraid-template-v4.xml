@@ -1,10 +1,10 @@
-<?xml version="1.0"?>
+<?xml version='1.0' encoding='utf-8'?>
 <Container version="2">
   <Name>twitch-drops-miner</Name>
   <Repository>strikerromanov/twitch-drops-miner:latest</Repository>
   <Registry>https://hub.docker.com/r/strikerromanov/twitch-drops-miner</Registry>
   <Network>bridge</Network>
-  <MyIP/>
+  <MyIP />
   <Shell>sh</Shell>
   <Privileged>false</Privileged>
   <Support>https://github.com/strikerromanov/Twitch_Drops_Miner</Support>
@@ -12,28 +12,22 @@
   <Overview>Twitch Drops Miner - Automate Twitch drop claiming and channel points farming. Includes OAuth authentication, drop indexing, and multi-account support.</Overview>
   <Category>Tools:</Category>
   <WebUI>http://[IP]:[PORT:3000]</WebUI>
-  <TemplateURL/>
+  <TemplateURL />
   <Icon>https://raw.githubusercontent.com/strikerromanov/Twitch_Drops_Miner/main/.github/twitch-icon.png</Icon>
   <ExtraParams>--restart=unless-stopped</ExtraParams>
-  <PostArgs/>
-  <CPUset/>
+  <PostArgs />
+  <CPUset />
   <DateInstalled>1739832000</DateInstalled>
-  <DonateText/>
-  <DonateLink/>
+  <DonateText />
+  <DonateLink />
   <Description>Twitch Drops Miner automates drop claiming and channel points farming with OAuth authentication and multi-account support.</Description>
-  
-  <!-- Networking -->
   <Config Name="WebUI Port" Target="3000" Default="3000" Mode="tcp" Description="WebUI Port" Type="Port" Display="always" Required="true" Mask="false">3000</Config>
-  
-  <!-- Storage -->
   <Config Name="App Data" Target="/app/data" Default="/mnt/cache/appdata/twitch-drops-miner" Mode="rw" Description="Database and persistent storage" Type="Path" Display="always" Required="true" Mask="false">/mnt/cache/appdata/twitch-drops-miner</Config>
-  
-  <!-- Environment Variables -->
   <Config Name="Node Environment" Target="NODE_ENV" Default="production" Mode="" Description="Node environment (development/production)" Type="Variable" Display="always" Required="false" Mask="false">production</Config>
   <Config Name="Server Port" Target="PORT" Default="3000" Mode="" Description="Server port" Type="Variable" Display="always" Required="false" Mask="false">3000</Config>
-  
-  <!-- Twitch OAuth Configuration -->
   <Config Name="Twitch Client ID" Target="TWITCH_CLIENT_ID" Default="" Mode="" Description="Twitch OAuth Client ID from dev.twitch.tv/console" Type="Variable" Display="always" Required="true" Mask="false">YOUR_CLIENT_ID_HERE</Config>
   <Config Name="Twitch Client Secret" Target="TWITCH_CLIENT_SECRET" Default="" Mode="" Description="Twitch OAuth Client Secret from dev.twitch.tv/console" Type="Variable" Display="always" Required="true" Mask="true">YOUR_CLIENT_SECRET_HERE</Config>
   <Config Name="Twitch Redirect URI" Target="TWITCH_REDIRECT_URI" Default="http://192.168.1.99:3000/auth/callback" Mode="" Description="OAuth callback URL" Type="Variable" Display="always" Required="true" Mask="false">http://192.168.1.99:3000/auth/callback</Config>
+  <Config Name="User ID" Target="PUID" Default="99" Mode="" Description="User ID for file permissions (default: 99 for nobody)" Type="Variable" Display="advanced" Required="false" Mask="false">99</Config>
+  <Config Name="Group ID" Target="PGID" Default="100" Mode="" Description="Group ID for file permissions (default: 100 for users)" Type="Variable" Display="advanced" Required="false" Mask="false">100</Config>
 </Container>
