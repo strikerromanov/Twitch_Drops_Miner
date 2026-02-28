@@ -14,6 +14,8 @@ export const Accounts: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showOAuthModal, setShowOAuthModal] = useState(false);
+  const [showManualCodeModal, setShowManualCodeModal] = useState(false);
+  const [manualAuthCode, setManualAuthCode] = useState('');
   const [authStatus, setAuthStatus] = useState<any>(null);
   const [oauthLoading, setOauthLoading] = useState(false);
   const [newAccount, setNewAccount] = useState<AddAccountForm>({
