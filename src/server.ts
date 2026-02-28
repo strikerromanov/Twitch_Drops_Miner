@@ -9,16 +9,15 @@ import crypto from 'crypto';
 
 import { generateAuthUrl, exchangeCodeForToken, getUserInfo, validateState, storeState } from './core/auth';
 import { logInfo, logError } from './core/logger';
-import { getConfig } from './core/config';
 import { Queries } from './core/database';
 
-// Services are default exports: export default new ServiceClass()
-import dropIndexer from './services/drop-indexer.service';
-import pointClaimer from './services/point-claimer.service';
-import chatFarmer from './services/chat-farmer.service';
-import followedChannels from './services/followed-channels.service';
-import healthCheck from './services/health-check.service';
-import bettingService from './services/betting.service';
+// Import services - they are TypeScript files
+const dropIndexerService = require('./services/drop-indexer.service').default;
+const pointClaimerService = require('./services/point-claimer.service').default;
+const chatFarmerService = require('./services/chat-farmer.service').default;
+const followedChannelsService = require('./services/followed-channels.service').default;
+const healthCheckService = require('./services/health-check.service').default;
+const bettingService = require('./services/betting.service').default;
 
 const app = express();
 const server = createServer(app);
@@ -42,7 +41,7 @@ const broadcast = (data: any) => {
 setInterval(() => broadcast({ type: 'stats', data: Queries.getStats() }), 5000);
 
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'healthy', services: healthCheck.getStatus() });
+  res.json({ status: 'healthy', services: healthCheckService.getStatus() });
 });
 
 app.get('/api/stats', (req, res) => {
@@ -97,7 +96,7 @@ app.get('/auth/callback', async (req: Request, res: Response) => {
   const { code, state, error, error_description } = req.query;
 
   if (error) {
-    logError('Auth error: ' + String(error));
+    logError('Auth error: ' + String(error), { query: req.query });
     return res.redirect('/?error=auth_failed');
   }
 
@@ -132,30 +131,30 @@ app.get('/auth/callback', async (req: Request, res: Response) => {
 
     res.redirect('/');
   } catch (error: any) {
-    logError('Token exchange failed: ' + String(error?.message || error));
+    logError('Token exchange failed: ' + String(error?.message || error), { error });
     res.redirect('/?error=token_exchange_failed');
   }
 });
 
 app.post('/api/start', (req, res) => {
-  dropIndexer.start();
-  pointClaimer.start();
-  chatFarmer.start();
-  followedChannels.start();
+  dropIndexerService.start();
+  pointClaimerService.start();
+  chatFarmerService.start();
+  followedChannelsService.start();
   bettingService.start();
   res.json({ success: true });
 });
 
 app.post('/api/stop', (req, res) => {
-  dropIndexer.stop();
-  pointClaimer.stop();
-  chatFarmer.stop();
-  followedChannels.stop();
+  dropIndexerService.stop();
+  pointClaimerService.stop();
+  chatFarmerService.stop();
+  followedChannelsService.stop();
   bettingService.stop();
   res.json({ success: true });
 });
 
 server.listen(PORT, '0.0.0.0', () => {
   logInfo('Server running on port ' + PORT);
-  healthCheck.start();
+  healthCheckService.start();
 });
