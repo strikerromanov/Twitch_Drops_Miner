@@ -14,6 +14,7 @@ import FollowedChannelsIndexer from './followed-channels-indexer';
 import { BackupService } from './backup-service.js';
 import { BettingEngine } from './betting-engine.js';
 import tmi from 'tmi.js';
+import { apiRouter } from "./src/api/routes.js";
 
 // Import new farming and indexing services
 
@@ -33,6 +34,10 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Register API routes
+app.use("/api", apiRouter);
+app.use("/api", apiRouter);
 app.use(express.static('dist'));
 
 // Initialize database
