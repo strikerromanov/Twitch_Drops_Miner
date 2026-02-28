@@ -1,4 +1,4 @@
-import { db } from '../core/database.js';
+import { getDb } from '../core/database.js';
 import { logger } from '../core/logger.js';
 
 interface BettingStats {
@@ -124,7 +124,7 @@ export class BettingService {
     const outcomeSelected = analysis.outcome === 'outcome1' ? prediction.outcome1 : prediction.outcome2;
     const outcomePercentage = analysis.outcome === 'outcome1' ? prediction.outcome1Percentage : prediction.outcome2Percentage;
 
-    const stmt = db.prepare(`
+    const stmt = getDb().prepare(`
       INSERT INTO bets (account_id, streamer_name, prediction_title, outcome_selected, outcome_percentage, points_wagered)
       VALUES (?, ?, ?, ?, ?, ?)
     `);
@@ -152,7 +152,7 @@ export class BettingService {
       params.push(accountId);
     }
 
-    const bets = db.prepare(query).all(...params) as any[];
+    const bets = getDb().prepare(query).all(...params) as any[];
     
     const wins = bets.filter(b => b.points_won > 0);
     const losses = bets.filter(b => b.points_won === 0);
@@ -172,7 +172,7 @@ export class BettingService {
   }
 
   getRecentBets(limit = 50) {
-    return db.prepare(`
+    return getDb().prepare(`
       SELECT * FROM betting_history 
       ORDER BY timestamp DESC 
       LIMIT ?
