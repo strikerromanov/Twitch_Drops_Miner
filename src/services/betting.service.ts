@@ -1,17 +1,6 @@
 import { getDb } from '../core/database';
 import { getLogger } from '../core/logger';
 
-interface PredictionEvent {
-  id: string;
-  streamer: string;
-  title: string;
-  outcomes: Array<{ id: string; title: string; color: string }>;
-  created_at: string;
-  ends_at: string;
-  prediction_window_seconds: number;
-  status: string;
-}
-
 class BettingService {
   private isActive: boolean = false;
   private checkInterval: NodeJS.Timeout | null = null;
@@ -22,7 +11,7 @@ class BettingService {
 
   private initializeDatabase() {
     getDb().exec(`
-      CREATE TABLE IF NOT EXISTS bets (
+      CREATE TABLE IF NOT EXISTS betting_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         account_id INTEGER NOT NULL,
         prediction_id TEXT NOT NULL,
@@ -34,14 +23,14 @@ class BettingService {
         FOREIGN KEY (account_id) REFERENCES accounts(id)
       )
     `);
-    getLogger().info('✅ Betting database initialized');
+    getLogger().info('Betting database initialized');
   }
 
   start() {
     if (this.isActive) return;
     this.isActive = true;
     this.checkInterval = setInterval(() => this.checkForPredictions(), 30000);
-    getLogger().info('🎰 Betting Service started');
+    getLogger().info('Betting Service started');
   }
 
   stop() {
@@ -51,7 +40,7 @@ class BettingService {
       clearInterval(this.checkInterval);
       this.checkInterval = null;
     }
-    getLogger().info('🎰 Betting Service stopped');
+    getLogger().info('Betting Service stopped');
   }
 
   private async checkForPredictions() {
@@ -62,24 +51,17 @@ class BettingService {
     }
   }
 
-  analyzePrediction(prediction: PredictionEvent): { shouldBet: boolean; outcome: string; confidence: number } {
-    return {
-      shouldBet: false,
-      outcome: 'none',
-      confidence: 0
-    };
-  }
-
-  getStats()
-  getBettingStats() {
-    return this.getStats();
-  } {
+  getStats() {
     return {
       bets: [],
       total: 0,
       won: 0,
       lost: 0
     };
+  }
+
+  getBettingStats() {
+    return this.getStats();
   }
 
   analyzeStreamer(streamer: string) {
@@ -90,4 +72,4 @@ class BettingService {
   }
 }
 
-export const bettingService = new BettingService();
+export default new BettingService();
