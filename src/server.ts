@@ -8,16 +8,16 @@ import dotenv from 'dotenv';
 import crypto from 'crypto';
 
 import { generateAuthUrl, exchangeCodeForToken, getUserInfo, validateState, storeState } from './core/auth';
-import { logInfo, logError, logDebug } from './core/logger';
+import { logInfo, logError } from './core/logger';
 import { getConfig } from './core/config';
 import { Queries } from './core/database';
 
-// Default imports for services (they use export default new Service())
-import dropIndexer from './services/drop-indexer.service';
-import pointClaimer from './services/point-claimer.service';
-import chatFarmer from './services/chat-farmer.service';
-import followedChannels from './services/followed-channels.service';
-import healthCheck from './services/health-check.service';
+// Services use default exports: export default new ServiceName()
+import dropIndexerService from './services/drop-indexer.service';
+import pointClaimerService from './services/point-claimer.service';
+import chatFarmerService from './services/chat-farmer.service';
+import followedChannelsService from './services/followed-channels.service';
+import healthCheckService from './services/health-check.service';
 import bettingService from './services/betting.service';
 
 const app = express();
@@ -42,7 +42,7 @@ const broadcast = (data: any) => {
 setInterval(() => broadcast({ type: 'stats', data: Queries.getStats() }), 5000);
 
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'healthy', services: healthCheck.getStatus() });
+  res.json({ status: 'healthy', services: healthCheckService.getStatus() });
 });
 
 app.get('/api/stats', (req, res) => {
@@ -60,7 +60,7 @@ app.get('/api/accounts', (req, res) => {
 app.post('/api/accounts/:id/status', (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
-  Queries.updateAccountStatus(status, parseInt(id));
+  Queries.updateAccountStatus(status, parseInt(id as string, 10));
   res.json({ success: true });
 });
 
@@ -81,7 +81,7 @@ app.post('/api/settings', (req, res) => {
 });
 
 app.get('/api/logs', (req, res) => {
-  const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
+  const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 100;
   res.json(Queries.getRecentLogs(limit));
 });
 
@@ -96,7 +96,7 @@ app.get('/auth/callback', async (req: Request, res: Response) => {
   const { code, state, error, error_description } = req.query;
 
   if (error) {
-    logError('Auth error:', error, error_description);
+    logError('Auth error: ' + error);
     return res.redirect('/?error=auth_failed');
   }
 
@@ -127,34 +127,34 @@ app.get('/auth/callback', async (req: Request, res: Response) => {
     };
 
     Queries.upsertAccount(account);
-    logInfo('Account added:', userData.login);
+    logInfo('Account added: ' + userData.login);
 
     res.redirect('/');
   } catch (error: any) {
-    logError('Token exchange failed:', error.message);
+    logError('Token exchange failed: ' + error.message);
     res.redirect('/?error=token_exchange_failed');
   }
 });
 
 app.post('/api/start', (req, res) => {
-  dropIndexer.start();
-  pointClaimer.start();
-  chatFarmer.start();
-  followedChannels.start();
+  dropIndexerService.start();
+  pointClaimerService.start();
+  chatFarmerService.start();
+  followedChannelsService.start();
   bettingService.start();
   res.json({ success: true });
 });
 
 app.post('/api/stop', (req, res) => {
-  dropIndexer.stop();
-  pointClaimer.stop();
-  chatFarmer.stop();
-  followedChannels.stop();
+  dropIndexerService.stop();
+  pointClaimerService.stop();
+  chatFarmerService.stop();
+  followedChannelsService.stop();
   bettingService.stop();
   res.json({ success: true });
 });
 
 server.listen(PORT, '0.0.0.0', () => {
-  logInfo(`Server running on port ${PORT}`);
-  healthCheck.start();
+  logInfo('Server running on port ' + PORT);
+  healthCheckService.start();
 });
