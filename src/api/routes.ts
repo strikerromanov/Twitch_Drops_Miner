@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { bettingService } from "../services/betting.service.js";
 import { Queries, getDb, clearCache } from '../core/database';
 import { logInfo, logError, logWarn } from '../core/logger';
 import {
@@ -20,6 +21,7 @@ import type {
 } from '../core/types';
 
 export const apiRouter = Router();
+import { bettingService } from '../services/betting.service.js';
 
 const asyncHandler = (fn: Function) => (req: Request, res: Response, next: Function) => {
   Promise.resolve(fn(req, res, next)).catch((err) => next(err));
@@ -644,9 +646,8 @@ apiRouter.post('/api/cache/clear', (req, res) => {
 });
 
 // ============= BETTING ENDPOINTS =============
-import { bettingService } from '../services/betting.service.js';
 
-app.get('/api/betting-stats', (req, res) => {
+apiRouter.get('/api/betting-stats', (req, res) => {
   try {
     const accountId = req.query.accountId ? parseInt(req.query.accountId as string) : undefined;
     const stats = bettingService.getBettingStats(accountId);
@@ -657,7 +658,7 @@ app.get('/api/betting-stats', (req, res) => {
   }
 });
 
-app.get('/api/betting-history', (req, res) => {
+apiRouter.get('/api/betting-history', (req, res) => {
   try {
     const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
     const history = bettingService.getRecentBets(limit);
@@ -668,7 +669,7 @@ app.get('/api/betting-history', (req, res) => {
   }
 });
 
-app.post('/api/place-bet', (req, res) => {
+apiRouter.post('/api/place-bet', (req, res) => {
   try {
     const { accountId, prediction } = req.body;
     
