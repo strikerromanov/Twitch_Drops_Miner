@@ -1,5 +1,5 @@
 import { getDb } from '../core/database.js';
-import { logger } from '../core/logger.js';
+import { getLogger } from '../core/logger.js';
 
 interface BettingStats {
   totalBets: number;
@@ -45,14 +45,14 @@ export class BettingService {
         FOREIGN KEY (account_id) REFERENCES accounts(id)
       )
     `);
-    logger.info('✅ Betting database initialized');
+    getLogger().info('✅ Betting database initialized');
   }
 
   start() {
     if (this.isActive) return;
     this.isActive = true;
     this.checkInterval = setInterval(() => this.checkForPredictions(), 30000); // Check every 30s
-    logger.info('🎰 Betting Service started');
+    getLogger().info('🎰 Betting Service started');
   }
 
   stop() {
@@ -62,16 +62,16 @@ export class BettingService {
       clearInterval(this.checkInterval);
       this.checkInterval = null;
     }
-    logger.info('🎰 Betting Service stopped');
+    getLogger().info('🎰 Betting Service stopped');
   }
 
   private async checkForPredictions() {
     try {
       // This would integrate with Twitch API to check for predictions
       // For now, it's a placeholder that would be triggered by events
-      logger.debug('Checking for betting opportunities...');
+      getLogger().debug('Checking for betting opportunities...');
     } catch (error) {
-      logger.error('Error checking for predictions:', error);
+      getLogger().error('Error checking for predictions:', error);
     }
   }
 
@@ -114,7 +114,7 @@ export class BettingService {
     const analysis = this.analyzePrediction(prediction);
     
     if (!analysis.shouldBet) {
-      logger.debug(`Skipping bet on "${prediction.title}" - confidence too low (${analysis.confidence}%)`);
+      getLogger().debug(`Skipping bet on "${prediction.title}" - confidence too low (${analysis.confidence}%)`);
       return null;
     }
 
@@ -138,7 +138,7 @@ export class BettingService {
       betSize
     );
 
-    logger.info(`🎰 Bet placed: ${betSize} points on "${outcomeSelected}" (${outcomePercentage}% confidence)`);
+    getLogger().info(`🎰 Bet placed: ${betSize} points on "${outcomeSelected}" (${outcomePercentage}% confidence)`);
     
     return { betId: result.lastInsertRowid, betSize, outcome: outcomeSelected };
   }
