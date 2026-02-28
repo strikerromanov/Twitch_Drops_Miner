@@ -23,12 +23,34 @@ const TWITCH_OAUTH_CONFIG = {
  * @param scopes - OAuth scopes (default: email, subs, redemptions)
  * @returns Authorization URL
  */
+// State parameter storage for CSRF protection
+const stateStore = new Map<string, { timestamp: number }>();
+
+export function storeState(state: string): void {
+  stateStore.set(state, { timestamp: Date.now() });
+  // Auto-expire after 10 minutes
+  setTimeout(() => stateStore.delete(state), 600000);
+}
+
+export function validateState(state: string): boolean {
+  const stored = stateStore.get(state);
+  if (!stored) return false;
+  const age = Date.now() - stored.timestamp;
+  if (age > 600000) { // 10 minutes
+    stateStore.delete(state);
+    return false;
+  }
+  stateStore.delete(state); // One-time use
+  return true;
+}
+
 export function generateAuthUrl(
   clientId: string,
   redirectUri: string,
   scopes: string[] = TWITCH_OAUTH_CONFIG.scopes
 ): string {
   const state = generateState();
+  storeState(state);
   
   const params = new URLSearchParams({
     client_id: clientId,

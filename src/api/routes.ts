@@ -57,7 +57,12 @@ apiRouter.get('/auth/twitch', asyncHandler(async (req: Request, res: Response) =
  */
 apiRouter.post('/auth/callback', asyncHandler(async (req: Request, res: Response) => {
   try {
-    const { code } = req.body;
+    const { code, state } = req.body;
+
+    // CRITICAL: Validate state parameter to prevent CSRF attacks
+    if (!state || !validateState(state)) {
+      return res.status(400).json({ error: 'Invalid or expired state parameter' });
+    }
     
     if (!code) {
       return res.status(400).json({ error: 'Authorization code is required' });

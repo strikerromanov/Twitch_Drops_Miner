@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Container version="2">
+  <Name>twitch-miner_v5</Name>
+  <Repository>strikerromanov/twitch-drops-miner:latest</Repository>
+  <Registry>https://hub.docker.com/r/strikerromanov/twitch-drops-miner</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/strikerromanov/Twitch_Drops_Miner/issues</Support>
+  <Project>https://github.com/strikerromanov/Twitch_Drops_Miner</Project>
+  <Overview>Twitch Drops Miner with manual OAuth code entry feature&#13;
+&#13;
+Features:&#13;
+- Manual OAuth code entry for HTTP deployments&#13;
+- Automatic drop claiming&#13;
+- Points farming&#13;
+- Multi-account support&#13;
+- Real-time notifications&#13;
+- Analytics dashboard&#13;
+&#13;
+Version 5 - Manual OAuth Code Entry Feature</Overview>
+  <Category>MediaApp:Video</Category>
+  <WebUI>http://[IP]:[PORT:3000]</WebUI>
+  <TemplateURL/>
+  <Icon>https://raw.githubusercontent.com/strikerromanov/Twitch_Drops_Miner/main/.github/twitch-icon.png</Icon>
+  <ExtraParams>--restart=unless-stopped</ExtraParams>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled>1739564400</DateInstalled>
+  <DonateText/>
+  <DonateLink/>
+  <Requires>Manual OAuth code entry - no redirect URI configuration needed</Requires>
+  <Config Name="WebUI Port" Target="3000" Default="3000" Mode="tcp" Description="Container Port: 3000" Type="Port" Display="always" Required="true" Mask="false">3000</Config>
+  <Config Name="Data Path" Target="/app/data" Default="/mnt/cache/appdata/twitch-drops-miner" Mode="rw" Description="Container Path: /app/data" Type="Path" Display="always" Required="true" Mask="false">/mnt/cache/appdata/twitch-drops-miner</Config>
+  <Config Name="Node Environment" Target="NODE_ENV" Default="production" Description="Application Environment" Type="Variable" Display="always" Required="true" Mask="false">production</Config>
+  <Config Name="Application Port" Target="PORT" Default="3000" Description="Application Port" Type="Variable" Display="always" Required="true" Mask="false">3000</Config>
+  <Config Name="Twitch Client ID" Target="TWITCH_CLIENT_ID" Default="" Description="Twitch Application Client ID" Type="Variable" Display="always" Required="true" Mask="false">5c7q7whjviosekkutuvj80a5kijotk</Config>
+  <Config Name="Twitch Client Secret" Target="TWITCH_CLIENT_SECRET" Default="" Description="Twitch Application Client Secret" Type="Variable" Display="always" Required="true" Mask="true">5c7q7whjviosekkutuvj80a5kijotk</Config>
+  <Config Name="Redirect URI" Target="TWITCH_REDIRECT_URI" Default="http://192.168.1.99:3000/auth/callback" Description="OAuth Redirect URI" Type="Variable" Display="always" Required="true" Mask="false">http://192.168.1.99:3000/auth/callback</Config>
+  <Config Name="User ID" Target="PUID" Default="99" Description="Process User ID" Type="Variable" Display="advanced" Required="false" Mask="false">99</Config>
+  <Config Name="Group ID" Target="PGID" Default="100" Description="Process Group ID" Type="Variable" Display="advanced" Required="false" Mask="false">100</Config>
+</Container>
